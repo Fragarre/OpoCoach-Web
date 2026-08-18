@@ -255,7 +255,10 @@ def crear_test(
                     lp.importacion_fichero_id, lp.pagina_origen,
                     lp.norma_id_normalizada, lp.articulo_normalizado,
                     lp.teorica_practica, lp.tipo_norma_normalizado,
-                    lp.nombre_norma_normalizado,
+                    COALESCE(
+                        n.nombre_canonico,
+                        lp.nombre_norma_normalizado
+                    ) AS nombre_norma_normalizado,
                     bp.tipo_vinculacion,
                     bp.estado AS banco_estado,
                     bp.metodo_vinculacion,
@@ -269,6 +272,8 @@ def crear_test(
                 FROM banco_preguntas bp
                 JOIN lote_preguntas lp
                   ON lp.id = bp.pregunta_id
+                LEFT JOIN normas n
+                  ON n.id = lp.norma_id_normalizada
                 JOIN banco_preguntas_temas bpt
                   ON bpt.banco_pregunta_id = bp.id
                  AND bpt.es_principal = 1
@@ -348,7 +353,10 @@ def crear_test(
                     lp.importacion_fichero_id, lp.pagina_origen,
                     lp.norma_id_normalizada, lp.articulo_normalizado,
                     lp.teorica_practica, lp.tipo_norma_normalizado,
-                    lp.nombre_norma_normalizado,
+                    COALESCE(
+                        n.nombre_canonico,
+                        lp.nombre_norma_normalizado
+                    ) AS nombre_norma_normalizado,
                     bp.tipo_vinculacion,
                     bp.estado AS banco_estado,
                     bp.metodo_vinculacion,
@@ -362,6 +370,8 @@ def crear_test(
                 FROM banco_preguntas bp
                 JOIN lote_preguntas lp
                   ON lp.id = bp.pregunta_id
+                LEFT JOIN normas n
+                  ON n.id = lp.norma_id_normalizada
                 JOIN banco_preguntas_temas bpt
                   ON bpt.banco_pregunta_id = bp.id
                  AND bpt.es_principal = 1
