@@ -932,11 +932,6 @@ def guardar_respuestas(
             if simulacro is None:
                 raise ValueError("El simulacro no existe.")
 
-            if simulacro["estado"] == "FINALIZADO":
-                raise ValueError(
-                    "El simulacro ya está finalizado y no admite cambios."
-                )
-
             cur.execute(
                 """
                 SELECT id

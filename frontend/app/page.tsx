@@ -461,6 +461,39 @@ export default function Home() {
     }
   }
 
+  async function modificarRespuestas() {
+    if (simulacroId === null) return;
+
+    setOcupado(true);
+    setAccionEnCurso("Preparando modificación de respuestas...");
+    setError("");
+    setMensaje("");
+
+    try {
+      const [lista, tiempo] = await Promise.all([
+        apiFetch<Pregunta[]>(
+          `api/v1/simulacros/${simulacroId}/preguntas`
+        ),
+        apiFetch<{ tiempo_correccion_segundos: number }>(
+          `api/v1/simulacros/${simulacroId}/tiempo-correccion`
+        ),
+      ]);
+
+      setPreguntas(lista);
+      inicializarRespuestas(lista);
+      setResultado(null);
+      setCorreccion([]);
+      setResultadoAcumulado(null);
+      iniciarTiempoCorreccion(tiempo.tiempo_correccion_segundos);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setOcupado(false);
+      setAccionEnCurso(null);
+    }
+  }
+
   async function eliminarGuardado(simulacro: SimulacroListado) {
     const nombre = simulacro.tipo_prueba === "TEST" ? "test" : "simulacro";
     const confirmar = window.confirm(
@@ -1222,6 +1255,16 @@ export default function Home() {
       {resultado && (
         <section className="card">
           <h2>Resultado</h2>
+          <button
+            className="secondary"
+            disabled={ocupado}
+            onClick={modificarRespuestas}
+            style={{ marginBottom: 16 }}
+          >
+            {ocupado && accionEnCurso === "Preparando modificación de respuestas..."
+              ? "Preparando..."
+              : "Modificar respuestas"}
+          </button>
           <div className="result-grid">
             <div><strong>{resultado.nota.toFixed(2)}</strong><span>Nota</span></div>
             <div><strong>{resultado.aciertos}</strong><span>Aciertos</span></div>
