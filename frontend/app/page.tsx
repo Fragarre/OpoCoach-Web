@@ -226,15 +226,12 @@ export default function Home() {
   const [seccion, setSeccion] = useState<"SIMULACROS" | "TESTS">("SIMULACROS");
   const [tipoActivo, setTipoActivo] = useState<"SIMULACRO" | "TEST" | null>(null);
   const [convocatoriaTestId, setConvocatoriaTestId] = useState<number | null>(null);
-  const [fuentesTest, setFuentesTest] = useState<string[]>([...FUENTES]);
   const [modoTest, setModoTest] = useState<"TEMA" | "NORMA">("TEMA");
   const [numeroPreguntasTest, setNumeroPreguntasTest] = useState(20);
   const [temasTest, setTemasTest] = useState<TemaTest[]>([]);
   const [normasTest, setNormasTest] = useState<NormaTest[]>([]);
   const [temasSeleccionados, setTemasSeleccionados] = useState<number[]>([]);
   const [normasSeleccionadas, setNormasSeleccionadas] = useState<string[]>([]);
-  const [origenes, setOrigenes] = useState<string[]>([...ORIGENES]);
-  const [fuentes, setFuentes] = useState<string[]>([...FUENTES]);
   const [simulacroId, setSimulacroId] = useState<number | null>(null);
   const [preguntas, setPreguntas] = useState<Pregunta[]>([]);
   const [respuestas, setRespuestas] = useState<Record<number, RespuestaLocal>>({});
@@ -317,7 +314,7 @@ export default function Home() {
   useEffect(() => {
     if (!session || convocatoriaTestId === null) return;
 
-    const query = fuentesTest
+    const query = FUENTES
       .map((f) => `fuente=${encodeURIComponent(f)}`)
       .join("&");
 
@@ -350,7 +347,7 @@ export default function Home() {
       .catch((err) => {
         setError(err instanceof Error ? err.message : String(err));
       });
-  }, [session, convocatoriaTestId, fuentesTest]);
+  }, [session, convocatoriaTestId]);
 
   function limpiarSimulacro() {
     setPreguntas([]);
@@ -816,11 +813,6 @@ export default function Home() {
   }
 
   async function crear(convocatoriaId: number) {
-    if (origenes.length === 0 || fuentes.length === 0) {
-      setError("Selecciona al menos un origen y una fuente.");
-      return;
-    }
-
     setError("");
     setMensaje("");
     limpiarSimulacro();
@@ -832,8 +824,8 @@ export default function Home() {
         method: "POST",
         body: JSON.stringify({
           convocatoria_id: convocatoriaId,
-          origenes,
-          fuentes,
+          origenes: [...ORIGENES],
+          fuentes: [...FUENTES],
         }),
       });
 
@@ -861,10 +853,6 @@ export default function Home() {
   async function crearTest() {
     if (convocatoriaTestId === null) {
       setError("Selecciona una convocatoria.");
-      return;
-    }
-    if (fuentesTest.length === 0) {
-      setError("Selecciona al menos una fuente.");
       return;
     }
     if (numeroPreguntasTest <= 0) {
@@ -896,7 +884,7 @@ export default function Home() {
           modo_seleccion: modoTest,
           temas_seleccionados: temasSeleccionados,
           normas_seleccionadas: normasSeleccionadas,
-          fuentes: fuentesTest,
+          fuentes: [...FUENTES],
         }),
       });
 
@@ -1514,34 +1502,6 @@ export default function Home() {
         <section className="card">
           <h2>Crear simulacro</h2>
 
-          <h3>Origen de las preguntas</h3>
-          <div className="options">
-            {ORIGENES.map((origen) => (
-              <label key={origen}>
-                <input
-                  type="checkbox"
-                  checked={origenes.includes(origen)}
-                  onChange={() => toggle(origen, origenes, setOrigenes)}
-                />{" "}
-                {origen}
-              </label>
-            ))}
-          </div>
-
-          <h3>Fuente</h3>
-          <div className="options">
-            {FUENTES.map((fuente) => (
-              <label key={fuente}>
-                <input
-                  type="checkbox"
-                  checked={fuentes.includes(fuente)}
-                  onChange={() => toggle(fuente, fuentes, setFuentes)}
-                />{" "}
-                {fuente === "REAL" ? "Real/importada" : "Generada por IA"}
-              </label>
-            ))}
-          </div>
-
           {convocatorias.map((convocatoria) => (
             <div className="convocatoria" key={convocatoria.id}>
               <strong>{convocatoria.codigo}</strong>
@@ -1647,24 +1607,6 @@ export default function Home() {
               }
             />
 
-            <h3>Fuente</h3>
-            <div className="options">
-              {FUENTES.map((fuente) => (
-                <label key={fuente}>
-                  <input
-                    type="checkbox"
-                    checked={fuentesTest.includes(fuente)}
-                    onChange={() =>
-                      toggle(fuente, fuentesTest, setFuentesTest)
-                    }
-                  />{" "}
-                  {fuente === "REAL"
-                    ? "Real/importada"
-                    : "Generada por IA"}
-                </label>
-              ))}
-            </div>
-
             <h3>Generar preguntas por</h3>
             <div className="options">
               <label>
@@ -1702,8 +1644,7 @@ export default function Home() {
                       }
                     />
                     <span>
-                      {tema.numero_tema}. {tema.parte} — {tema.titulo}{" "}
-                      <strong>({tema.disponibles} disponibles)</strong>
+                      {tema.numero_tema}. {tema.parte} — {tema.titulo}
                     </span>
                   </label>
                 ))}
@@ -1724,8 +1665,7 @@ export default function Home() {
                       }
                     />
                     <span>
-                      {norma.norma_nombre}{" "}
-                      <strong>({norma.disponibles} disponibles)</strong>
+                      {norma.norma_nombre}
                     </span>
                   </label>
                 ))}
@@ -1735,7 +1675,7 @@ export default function Home() {
             <div style={{ marginTop: 18 }}>
               <button
                 className="primary"
-                disabled={ocupado || fuentesTest.length === 0}
+                disabled={ocupado}
                 onClick={crearTest}
               >
                 {ocupado ? "Creando..." : "Crear test"}
