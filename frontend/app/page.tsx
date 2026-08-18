@@ -874,6 +874,7 @@ export default function Home() {
       setSimulacroId(creado.id);
       setPreguntas(lista);
       inicializarRespuestas(lista);
+      iniciarTiempoCorreccion(0);
       await recargarTests();
 
       const aviso =
