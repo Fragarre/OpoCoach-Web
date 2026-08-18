@@ -1371,6 +1371,58 @@ def obtener_resultado_guardado(
         "nota": round(nota, 2),
     }
 
+
+def obtener_resultado_para_analisis(
+    simulacro_id: int,
+    user_id: UUID,
+) -> dict:
+    """
+    Devuelve el resultado de la prueba abierta junto con los valores de
+    puntuación que necesita el análisis IA.
+
+    No modifica datos.
+    """
+    resultado = obtener_resultado_guardado(simulacro_id, user_id)
+
+    with conectar_postgres() as con:
+        with con.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT
+                    convocatoria_id,
+                    valoracion_test_acierto,
+                    valoracion_test_fallo,
+                    valoracion_test_no_contesta
+                FROM public.simulacros
+                WHERE id = %s
+                  AND user_id = %s
+                """,
+                (simulacro_id, user_id),
+            )
+            simulacro = cur.fetchone()
+
+    if simulacro is None:
+        raise ValueError("El simulacro no existe.")
+
+    resultado["convocatoria_id"] = int(simulacro["convocatoria_id"])
+    resultado["valor_acierto"] = float(
+        simulacro["valoracion_test_acierto"]
+        if simulacro["valoracion_test_acierto"] is not None
+        else 1.0
+    )
+    resultado["valor_fallo"] = float(
+        simulacro["valoracion_test_fallo"]
+        if simulacro["valoracion_test_fallo"] is not None
+        else 0.0
+    )
+    resultado["valor_no_contesta"] = float(
+        simulacro["valoracion_test_no_contesta"]
+        if simulacro["valoracion_test_no_contesta"] is not None
+        else 0.0
+    )
+
+    return resultado
+
 def obtener_resultado_acumulado(
     simulacro_id: int,
     user_id: UUID,

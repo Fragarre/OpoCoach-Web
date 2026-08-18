@@ -1,6 +1,10 @@
+import base64
 import stripe
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 
+from app.analisis_rendimiento import generar_analisis_rendimiento
+from app.pdf_examen import generar_pdf_preguntas
+from app.pdf_soluciones import generar_pdf_soluciones
 from app.auth import UsuarioAutenticado, usuario_actual
 from app.billing import crear_checkout_suscripcion
 from app.subscriptions import procesar_webhook, obtener_estado_suscripcion
@@ -47,6 +51,7 @@ from app.simulacros import (
     listar_simulacros,
     eliminar_simulacro,
     obtener_resultado_guardado,
+    obtener_resultado_para_analisis,
     obtener_resultado_acumulado,
 )
 
@@ -404,6 +409,94 @@ def resultado_acumulado_api(
         mensaje = str(exc)
         codigo = 404 if "no existe" in mensaje.lower() else 400
         raise HTTPException(status_code=codigo, detail=mensaje) from exc
+
+
+
+
+
+
+@app.get("/api/v1/simulacros/{simulacro_id}/pdf-soluciones")
+def pdf_soluciones_api(
+    simulacro_id: int,
+    usuario: UsuarioAutenticado = Depends(usuario_actual),
+) -> dict:
+    """
+    Genera el PDF de soluciones desde el snapshot guardado.
+    Está disponible tanto para pruebas abiertas como finalizadas.
+    """
+    try:
+        nombre, contenido = generar_pdf_soluciones(
+            simulacro_id=simulacro_id,
+            user_id=usuario.id,
+        )
+        return {
+            "filename": nombre,
+            "content_base64": base64.b64encode(contenido).decode("ascii"),
+        }
+    except ValueError as exc:
+        mensaje = str(exc)
+        codigo = 404 if "no existe" in mensaje.lower() else 400
+        raise HTTPException(status_code=codigo, detail=mensaje) from exc
+
+
+@app.get("/api/v1/simulacros/{simulacro_id}/pdf-preguntas")
+def pdf_preguntas_api(
+    simulacro_id: int,
+    incluir_seguridad: bool = True,
+    usuario: UsuarioAutenticado = Depends(usuario_actual),
+) -> dict:
+    """
+    Genera bajo petición el PDF de preguntas a partir del snapshot guardado.
+    El PDF no se persiste en el servidor.
+    """
+    try:
+        nombre, contenido = generar_pdf_preguntas(
+            simulacro_id=simulacro_id,
+            user_id=usuario.id,
+            incluir_seguridad=incluir_seguridad,
+        )
+        return {
+            "filename": nombre,
+            "content_base64": base64.b64encode(contenido).decode("ascii"),
+        }
+    except ValueError as exc:
+        mensaje = str(exc)
+        codigo = 404 if "no existe" in mensaje.lower() else 400
+        raise HTTPException(status_code=codigo, detail=mensaje) from exc
+
+
+@app.post("/api/v1/simulacros/{simulacro_id}/analisis-rendimiento")
+def analisis_rendimiento_api(
+    simulacro_id: int,
+    usuario: UsuarioAutenticado = Depends(usuario_actual),
+) -> dict:
+    """
+    Genera bajo petición un análisis IA del rendimiento de la prueba abierta
+    y del acumulado del mismo tipo en su convocatoria.
+    """
+    try:
+        resultado_actual = obtener_resultado_para_analisis(
+            simulacro_id,
+            usuario.id,
+        )
+        resultado_acumulado = obtener_resultado_acumulado(
+            simulacro_id,
+            usuario.id,
+        )
+        texto = generar_analisis_rendimiento(
+            resultado_actual=resultado_actual,
+            resultado_acumulado=resultado_acumulado,
+        )
+        return {
+            "firma_datos": resultado_acumulado["firma_datos"],
+            "texto": texto,
+        }
+    except ValueError as exc:
+        mensaje = str(exc)
+        codigo = 404 if "no existe" in mensaje.lower() else 400
+        raise HTTPException(status_code=codigo, detail=mensaje) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.delete("/api/v1/simulacros/{simulacro_id}", status_code=204)

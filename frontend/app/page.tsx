@@ -117,6 +117,16 @@ type ResultadoAcumulado = {
   firma_datos: string;
 };
 
+type PdfGenerado = {
+  filename: string;
+  content_base64: string;
+};
+
+type AnalisisRendimiento = {
+  firma_datos: string;
+  texto: string;
+};
+
 type SimulacroListado = {
   id: number;
   convocatoria_id: number;
@@ -194,6 +204,9 @@ export default function Home() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [correccion, setCorreccion] = useState<PreguntaCorregida[]>([]);
   const [resultadoAcumulado, setResultadoAcumulado] = useState<ResultadoAcumulado | null>(null);
+  const [analisisRendimiento, setAnalisisRendimiento] = useState<
+    Record<string, AnalisisRendimiento>
+  >({});
   const [mensaje, setMensaje] = useState("");
   const [error, setError] = useState("");
   const [ocupado, setOcupado] = useState(false);
@@ -226,6 +239,7 @@ export default function Home() {
         setConvocatorias([]);
         setMisSimulacros([]);
         setMisTests([]);
+        setAnalisisRendimiento({});
         limpiarSimulacro();
       }
     });
@@ -418,6 +432,187 @@ export default function Home() {
       setAccionEnCurso(null);
     }
   }
+
+  function claveAnalisisActual(): string | null {
+    if (!resultadoAcumulado) return null;
+    return `${resultadoAcumulado.tipo_prueba}:${resultadoAcumulado.convocatoria_id}`;
+  }
+
+  function analisisActual(): AnalisisRendimiento | null {
+    const clave = claveAnalisisActual();
+    if (!clave || !resultadoAcumulado) return null;
+
+    const cache = analisisRendimiento[clave];
+    if (!cache) return null;
+
+    return cache.firma_datos === resultadoAcumulado.firma_datos
+      ? cache
+      : null;
+  }
+
+  async function descargarPdfSoluciones() {
+    if (simulacroId === null) return;
+
+    setOcupado(true);
+    setAccionEnCurso("Generando PDF de soluciones...");
+    setError("");
+    setMensaje("");
+
+    try {
+      const pdf = await apiFetch<PdfGenerado>(
+        `api/v1/simulacros/${simulacroId}/pdf-soluciones`
+      );
+
+      const binario = atob(pdf.content_base64);
+      const bytes = new Uint8Array(binario.length);
+
+      for (let i = 0; i < binario.length; i += 1) {
+        bytes[i] = binario.charCodeAt(i);
+      }
+
+      const blob = new Blob([bytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const enlace = document.createElement("a");
+
+      enlace.href = url;
+      enlace.download = pdf.filename;
+      document.body.appendChild(enlace);
+      enlace.click();
+      enlace.remove();
+
+      URL.revokeObjectURL(url);
+      setMensaje("PDF de soluciones generado.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setOcupado(false);
+      setAccionEnCurso(null);
+    }
+  }
+
+
+  async function descargarPdfPreguntas() {
+    if (simulacroId === null) return;
+
+    setOcupado(true);
+    setAccionEnCurso("Generando PDF de preguntas...");
+    setError("");
+    setMensaje("");
+
+    try {
+      const pdf = await apiFetch<PdfGenerado>(
+        `api/v1/simulacros/${simulacroId}/pdf-preguntas?incluir_seguridad=true`
+      );
+
+      const binario = atob(pdf.content_base64);
+      const bytes = new Uint8Array(binario.length);
+
+      for (let i = 0; i < binario.length; i += 1) {
+        bytes[i] = binario.charCodeAt(i);
+      }
+
+      const blob = new Blob([bytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const enlace = document.createElement("a");
+
+      enlace.href = url;
+      enlace.download = pdf.filename;
+      document.body.appendChild(enlace);
+      enlace.click();
+      enlace.remove();
+
+      URL.revokeObjectURL(url);
+      setMensaje("PDF de preguntas generado.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setOcupado(false);
+      setAccionEnCurso(null);
+    }
+  }
+
+
+  async function generarAnalisisRendimiento() {
+    if (simulacroId === null || !resultadoAcumulado) return;
+
+    setOcupado(true);
+    setAccionEnCurso("Analizando los resultados acumulados...");
+    setError("");
+    setMensaje("");
+
+    try {
+      const analisis = await apiFetch<AnalisisRendimiento>(
+        `api/v1/simulacros/${simulacroId}/analisis-rendimiento`,
+        { method: "POST" }
+      );
+
+      const clave = `${resultadoAcumulado.tipo_prueba}:${resultadoAcumulado.convocatoria_id}`;
+      setAnalisisRendimiento((actual) => ({
+        ...actual,
+        [clave]: analisis,
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setOcupado(false);
+      setAccionEnCurso(null);
+    }
+  }
+
+  function renderInlineMarkdown(texto: string) {
+    const partes = texto.split(/(\*\*[^*]+\*\*)/g);
+
+    return partes.map((parte, indice) => {
+      if (parte.startsWith("**") && parte.endsWith("**")) {
+        return <strong key={indice}>{parte.slice(2, -2)}</strong>;
+      }
+
+      return <span key={indice}>{parte}</span>;
+    });
+  }
+
+  function renderAnalisisRendimiento(texto: string) {
+    return texto.split("\n").map((linea, indice) => {
+      const textoLinea = linea.trim();
+
+      if (!textoLinea) {
+        return <div key={indice} style={{ height: 8 }} />;
+      }
+
+      if (textoLinea.startsWith("### ")) {
+        return (
+          <h3 key={indice} style={{ marginTop: 22, marginBottom: 10 }}>
+            {renderInlineMarkdown(textoLinea.slice(4))}
+          </h3>
+        );
+      }
+
+      const numero = textoLinea.match(/^(\d+)\.\s+(.*)$/);
+      if (numero) {
+        return (
+          <p key={indice} style={{ margin: "8px 0 8px 18px" }}>
+            <strong>{numero[1]}.</strong>{" "}
+            {renderInlineMarkdown(numero[2])}
+          </p>
+        );
+      }
+
+      if (textoLinea.startsWith("- ")) {
+        return (
+          <p key={indice} style={{ margin: "6px 0 6px 22px" }}>
+            • {renderInlineMarkdown(textoLinea.slice(2))}
+          </p>
+        );
+      }
+
+      return (
+        <p key={indice} style={{ margin: "8px 0", lineHeight: 1.55 }}>
+          {renderInlineMarkdown(textoLinea)}
+        </p>
+      );
+    });
+  }
+
 
   async function actualizarSuscripcion() {
     try {
@@ -922,6 +1117,38 @@ export default function Home() {
         </div>
       )}
 
+      {simulacroId !== null && preguntas.length > 0 && (
+        <section className="card">
+          <h2>Documentos de la prueba</h2>
+          <p className="muted">
+            Los dos documentos se generan a partir de la copia congelada de esta
+            prueba. Puedes descargarlos aunque no hayas corregido la prueba en la
+            aplicación, por ejemplo para realizarla y corregirla en papel.
+          </p>
+          <div className="actions">
+            <button
+              className="secondary"
+              disabled={ocupado}
+              onClick={descargarPdfPreguntas}
+            >
+              {ocupado && accionEnCurso === "Generando PDF de preguntas..."
+                ? "Generando PDF..."
+                : "Descargar PDF de preguntas"}
+            </button>
+
+            <button
+              className="secondary"
+              disabled={ocupado}
+              onClick={descargarPdfSoluciones}
+            >
+              {ocupado && accionEnCurso === "Generando PDF de soluciones..."
+                ? "Generando PDF..."
+                : "Descargar PDF de soluciones"}
+            </button>
+          </div>
+        </section>
+      )}
+
       {resultado && (
         <section className="card">
           <h2>Resultado</h2>
@@ -1072,6 +1299,42 @@ export default function Home() {
               )}
             </>
           )}
+        </section>
+      )}
+
+      {resultado && resultadoAcumulado && resultadoAcumulado.simulacros > 0 && (
+        <section className="card">
+          <h2>Análisis acumulado de la convocatoria</h2>
+          <p className="muted">
+            El análisis utiliza todas las pruebas corregidas del mismo tipo que
+            la prueba abierta y que se conservan actualmente en esta convocatoria,
+            no únicamente esta corrección. Si se elimina o modifica una prueba,
+            los datos se recalculan.
+          </p>
+          <p>
+            <strong>Datos considerados:</strong>{" "}
+            {resultadoAcumulado.simulacros}{" "}
+            {resultadoAcumulado.tipo_prueba === "TEST" ? "tests" : "simulacros"} ·{" "}
+            {resultadoAcumulado.preguntas} preguntas.
+          </p>
+
+          {analisisActual() && (
+            <div style={{ marginTop: 18 }}>
+              {renderAnalisisRendimiento(analisisActual()!.texto)}
+            </div>
+          )}
+
+          <button
+            className="secondary"
+            disabled={ocupado}
+            onClick={generarAnalisisRendimiento}
+          >
+            {ocupado && accionEnCurso === "Analizando los resultados acumulados..."
+              ? "Analizando..."
+              : analisisActual()
+                ? "Regenerar análisis de rendimiento"
+                : "Generar análisis de rendimiento"}
+          </button>
         </section>
       )}
 
