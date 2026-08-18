@@ -33,10 +33,15 @@ def _timestamp_fin_periodo(suscripcion) -> datetime | None:
     valor = getattr(suscripcion, "current_period_end", None)
 
     if valor is None:
-        items = getattr(suscripcion, "items", None)
-        datos = getattr(items, "data", None) if items is not None else None
+        items = suscripcion.get("items") if hasattr(suscripcion, "get") else None
+        datos = items.get("data") if hasattr(items, "get") else None
         if datos:
-            valor = getattr(datos[0], "current_period_end", None)
+            primer_item = datos[0]
+            valor = (
+                primer_item.get("current_period_end")
+                if hasattr(primer_item, "get")
+                else getattr(primer_item, "current_period_end", None)
+            )
 
     if valor is None:
         return None
@@ -84,10 +89,15 @@ def _guardar_suscripcion(
     current_period_end = _timestamp_fin_periodo(suscripcion)
 
     plan = None
-    items = getattr(suscripcion, "items", None)
-    datos = getattr(items, "data", None) if items is not None else None
+    items = suscripcion.get("items") if hasattr(suscripcion, "get") else None
+    datos = items.get("data") if hasattr(items, "get") else None
     if datos:
-        price = getattr(datos[0], "price", None)
+        primer_item = datos[0]
+        price = (
+            primer_item.get("price")
+            if hasattr(primer_item, "get")
+            else getattr(primer_item, "price", None)
+        )
         plan = _id_stripe(price)
 
     with conectar_postgres() as con:
