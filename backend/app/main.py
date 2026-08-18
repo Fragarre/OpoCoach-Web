@@ -51,6 +51,7 @@ from app.simulacros import (
     listar_simulacros,
     eliminar_simulacro,
     obtener_resultado_guardado,
+    obtener_tiempo_correccion,
     obtener_resultado_para_analisis,
     obtener_resultado_acumulado,
 )
@@ -359,17 +360,40 @@ def guardar_respuestas_simulacro(
         raise HTTPException(status_code=codigo, detail=mensaje) from exc
 
 
+@app.get("/api/v1/simulacros/{simulacro_id}/tiempo-correccion")
+def tiempo_correccion_api(
+    simulacro_id: int,
+    usuario: UsuarioAutenticado = Depends(usuario_actual),
+) -> dict[str, int]:
+    try:
+        return {
+            "tiempo_correccion_segundos": obtener_tiempo_correccion(
+                simulacro_id,
+                usuario.id,
+            )
+        }
+    except ValueError as exc:
+        mensaje = str(exc)
+        codigo = 404 if "no existe" in mensaje.lower() else 400
+        raise HTTPException(status_code=codigo, detail=mensaje) from exc
+
+
 @app.post(
     "/api/v1/simulacros/{simulacro_id}/finalizar",
     response_model=ResultadoSimulacro,
 )
 def finalizar_simulacro_api(
     simulacro_id: int,
+    segundos_adicionales: int = Query(default=0, ge=0),
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> ResultadoSimulacro:
     try:
         return ResultadoSimulacro(
-            **finalizar_simulacro(simulacro_id, usuario.id)
+            **finalizar_simulacro(
+                simulacro_id,
+                usuario.id,
+                segundos_adicionales=segundos_adicionales,
+            )
         )
     except ValueError as exc:
         mensaje = str(exc)

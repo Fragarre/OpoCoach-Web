@@ -56,6 +56,7 @@ type Resultado = {
   no_contestadas: number;
   puntos: number;
   nota: number;
+  tiempo_correccion_segundos: number;
 };
 
 type AcumuladoTema = {
@@ -175,6 +176,43 @@ const SEGURIDADES = [
   ["MENOS_SEGURO", "Menos seguro"],
 ] as const;
 
+function formatearTiempo(segundos: number): string {
+  const total = Math.max(0, Math.floor(segundos));
+  const horas = Math.floor(total / 3600);
+  const minutos = Math.floor((total % 3600) / 60);
+  const segundosRestantes = total % 60;
+
+  if (horas > 0) {
+    return `${horas} h ${String(minutos).padStart(2, "0")} min ${String(
+      segundosRestantes
+    ).padStart(2, "0")} s`;
+  }
+
+  return `${minutos} min ${String(segundosRestantes).padStart(2, "0")} s`;
+}
+
+function CronometroCorreccion({
+  inicioMs,
+  tiempoPrevio,
+}: {
+  inicioMs: number;
+  tiempoPrevio: number;
+}) {
+  const [ahora, setAhora] = useState(Date.now());
+
+  useEffect(() => {
+    const intervalo = window.setInterval(() => setAhora(Date.now()), 1000);
+    return () => window.clearInterval(intervalo);
+  }, []);
+
+  const sesion = Math.max(0, Math.floor((ahora - inicioMs) / 1000));
+  return (
+    <div style={{ fontWeight: 600, marginBottom: 14 }}>
+      Tiempo transcurrido: {formatearTiempo(tiempoPrevio + sesion)}
+    </div>
+  );
+}
+
 export default function Home() {
   const supabase = useMemo(() => createClient(), []);
   const [session, setSession] = useState<Session | null>(null);
@@ -202,6 +240,9 @@ export default function Home() {
   const [respuestas, setRespuestas] = useState<Record<number, RespuestaLocal>>({});
   const [evaluarSeguridad, setEvaluarSeguridad] = useState(false);
   const [resultado, setResultado] = useState<Resultado | null>(null);
+  const [mostrarCronometro, setMostrarCronometro] = useState(false);
+  const [tiempoPrevioCorreccion, setTiempoPrevioCorreccion] = useState(0);
+  const [inicioCorreccionMs, setInicioCorreccionMs] = useState<number | null>(null);
   const [correccion, setCorreccion] = useState<PreguntaCorregida[]>([]);
   const [resultadoAcumulado, setResultadoAcumulado] = useState<ResultadoAcumulado | null>(null);
   const [analisisRendimiento, setAnalisisRendimiento] = useState<
@@ -320,6 +361,16 @@ export default function Home() {
     setResultadoAcumulado(null);
     setSimulacroId(null);
     setTipoActivo(null);
+    setMostrarCronometro(false);
+    setTiempoPrevioCorreccion(0);
+    setInicioCorreccionMs(null);
+  }
+
+
+  function iniciarTiempoCorreccion(tiempoPrevio = 0) {
+    setTiempoPrevioCorreccion(Math.max(0, Math.floor(tiempoPrevio)));
+    setInicioCorreccionMs(Date.now());
+    setMostrarCronometro(false);
   }
 
 
@@ -382,15 +433,24 @@ export default function Home() {
         ]);
         setSimulacroId(simulacro.id);
         setResultado(res);
+        setTiempoPrevioCorreccion(res.tiempo_correccion_segundos);
+        setInicioCorreccionMs(null);
+        setMostrarCronometro(false);
         setCorreccion(corr);
         setResultadoAcumulado(acumulado);
       } else {
-        const lista = await apiFetch<Pregunta[]>(
-          `api/v1/simulacros/${simulacro.id}/preguntas`
-        );
+        const [lista, tiempo] = await Promise.all([
+          apiFetch<Pregunta[]>(
+            `api/v1/simulacros/${simulacro.id}/preguntas`
+          ),
+          apiFetch<{ tiempo_correccion_segundos: number }>(
+            `api/v1/simulacros/${simulacro.id}/tiempo-correccion`
+          ),
+        ]);
         setSimulacroId(simulacro.id);
         setPreguntas(lista);
         inicializarRespuestas(lista);
+        iniciarTiempoCorreccion(tiempo.tiempo_correccion_segundos);
       }
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
@@ -752,6 +812,7 @@ export default function Home() {
       setSimulacroId(creado.id);
       setPreguntas(lista);
       inicializarRespuestas(lista);
+      iniciarTiempoCorreccion(0);
       await recargarSimulacros();
       setMensaje(
         `Simulacro ${creado.id} creado correctamente: ${lista.length} preguntas.`
@@ -912,8 +973,13 @@ export default function Home() {
         }
       );
 
+      const segundosSesion =
+        inicioCorreccionMs === null
+          ? 0
+          : Math.max(0, Math.floor((Date.now() - inicioCorreccionMs) / 1000));
+
       const res = await apiFetch<Resultado>(
-        `api/v1/simulacros/${simulacroId}/finalizar`,
+        `api/v1/simulacros/${simulacroId}/finalizar?segundos_adicionales=${segundosSesion}`,
         { method: "POST" }
       );
 
@@ -927,6 +993,9 @@ export default function Home() {
       ]);
 
       setResultado(res);
+      setTiempoPrevioCorreccion(res.tiempo_correccion_segundos);
+      setInicioCorreccionMs(null);
+      setMostrarCronometro(false);
       setCorreccion(corr);
       setResultadoAcumulado(acumulado);
       await recargarListaActiva();
@@ -1158,6 +1227,7 @@ export default function Home() {
             <div><strong>{resultado.fallos}</strong><span>Fallos</span></div>
             <div><strong>{resultado.no_contestadas}</strong><span>No contestadas</span></div>
             <div><strong>{resultado.puntos.toFixed(3)}</strong><span>Puntos</span></div>
+            <div><strong>{formatearTiempo(resultado.tiempo_correccion_segundos)}</strong><span>Tiempo empleado</span></div>
           </div>
         </section>
       )}
@@ -1674,6 +1744,25 @@ export default function Home() {
 
       {simulacroId !== null && !resultado && (
         <section className="card">
+          <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+            <input
+              type="checkbox"
+              checked={mostrarCronometro}
+              onChange={(event) => setMostrarCronometro(event.target.checked)}
+            />
+            <span>Mostrar cronómetro</span>
+          </label>
+          <p className="muted" style={{ marginTop: 0 }}>
+            El tiempo se registra igualmente aunque el cronómetro permanezca oculto.
+          </p>
+
+          {mostrarCronometro && inicioCorreccionMs !== null && (
+            <CronometroCorreccion
+              inicioMs={inicioCorreccionMs}
+              tiempoPrevio={tiempoPrevioCorreccion}
+            />
+          )}
+
           <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 18 }}>
             <input
               type="checkbox"

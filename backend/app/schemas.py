@@ -91,6 +91,7 @@ class ResultadoSimulacro(BaseModel):
     no_contestadas: int
     puntos: float
     nota: float
+    tiempo_correccion_segundos: int = 0
 
 
 class PreguntaCorregida(PreguntaSimulacro):

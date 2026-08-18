@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS public.simulacros (
     valoracion_test_no_contesta double precision,
     formula_nota text,
     factor_escala_nota double precision,
+    tiempo_correccion_segundos integer NOT NULL DEFAULT 0,
 
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),

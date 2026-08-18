@@ -1012,7 +1012,37 @@ def guardar_respuestas(
         con.commit()
 
 
-def finalizar_simulacro(simulacro_id: int, user_id: UUID) -> dict:
+
+def obtener_tiempo_correccion(
+    simulacro_id: int,
+    user_id: UUID,
+) -> int:
+    """Devuelve el tiempo acumulado de corrección, en segundos."""
+    with conectar_postgres() as con:
+        with con.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT COALESCE(tiempo_correccion_segundos, 0)
+                    AS tiempo_correccion_segundos
+                FROM public.simulacros
+                WHERE id = %s
+                  AND user_id = %s
+                """,
+                (simulacro_id, user_id),
+            )
+            fila = cur.fetchone()
+
+    if fila is None:
+        raise ValueError("El simulacro no existe.")
+
+    return max(0, int(fila["tiempo_correccion_segundos"] or 0))
+
+
+def finalizar_simulacro(
+    simulacro_id: int,
+    user_id: UUID,
+    segundos_adicionales: int = 0,
+) -> dict:
     """Cierra y califica usando la configuración congelada del simulacro."""
 
     with conectar_postgres() as con:
@@ -1028,7 +1058,9 @@ def finalizar_simulacro(simulacro_id: int, user_id: UUID) -> dict:
                     valoracion_test_acierto,
                     valoracion_test_fallo,
                     valoracion_test_no_contesta,
-                    factor_escala_nota
+                    factor_escala_nota,
+                    COALESCE(tiempo_correccion_segundos, 0)
+                        AS tiempo_correccion_segundos
                 FROM public.simulacros
                 WHERE id = %s
                   AND user_id = %s
@@ -1108,16 +1140,23 @@ def finalizar_simulacro(simulacro_id: int, user_id: UUID) -> dict:
             )
             nota = (puntos / denominador) * escala if denominador else 0.0
 
+            segundos = max(0, int(segundos_adicionales))
+            tiempo_total = max(
+                0,
+                int(simulacro["tiempo_correccion_segundos"] or 0),
+            ) + segundos
+
             cur.execute(
                 """
                 UPDATE public.simulacros
                 SET estado = 'FINALIZADO',
                     finalizado_at = COALESCE(finalizado_at, now()),
+                    tiempo_correccion_segundos = %s,
                     updated_at = now()
                 WHERE id = %s
                   AND user_id = %s
                 """,
-                (simulacro_id, user_id),
+                (tiempo_total, simulacro_id, user_id),
             )
 
         con.commit()
@@ -1131,6 +1170,7 @@ def finalizar_simulacro(simulacro_id: int, user_id: UUID) -> dict:
         "no_contestadas": no_contestadas,
         "puntos": round(puntos, 4),
         "nota": round(nota, 2),
+        "tiempo_correccion_segundos": tiempo_total,
     }
 
 
@@ -1281,7 +1321,9 @@ def obtener_resultado_guardado(
                     valoracion_test_acierto,
                     valoracion_test_fallo,
                     valoracion_test_no_contesta,
-                    factor_escala_nota
+                    factor_escala_nota,
+                    COALESCE(tiempo_correccion_segundos, 0)
+                        AS tiempo_correccion_segundos
                 FROM public.simulacros
                 WHERE id = %s
                   AND user_id = %s
@@ -1369,6 +1411,10 @@ def obtener_resultado_guardado(
         "no_contestadas": no_contestadas,
         "puntos": round(puntos, 4),
         "nota": round(nota, 2),
+        "tiempo_correccion_segundos": max(
+            0,
+            int(simulacro["tiempo_correccion_segundos"] or 0),
+        ),
     }
 
 
