@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+backend/.env
+.env
+frontend/.env.local
+frontend/.next/
+frontend/node_modules/
+# Copias ZIP locales
+backend/*.zip
+frontend/*.zip
+
+# Base local de pruebas
+backend/data/usuario_pruebas.sqlite3
