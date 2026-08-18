@@ -266,13 +266,14 @@ export default function Home() {
   const supabase = useMemo(() => createClient(), []);
   const [session, setSession] = useState<Session | null>(null);
   const [cargandoSesion, setCargandoSesion] = useState(true);
+  const [pantallaPublica, setPantallaPublica] = useState<"LANDING" | "LOGIN" | "REGISTRO">("LANDING");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [me, setMe] = useState<Me | null>(null);
   const [convocatorias, setConvocatorias] = useState<Convocatoria[]>([]);
   const [misSimulacros, setMisSimulacros] = useState<SimulacroListado[]>([]);
   const [misTests, setMisTests] = useState<SimulacroListado[]>([]);
-  const [seccion, setSeccion] = useState<"SIMULACROS" | "TESTS" | "CHAT">("SIMULACROS");
+  const [seccion, setSeccion] = useState<"INICIO" | "SIMULACROS" | "TESTS" | "CHAT">("INICIO");
   const [tipoActivo, setTipoActivo] = useState<"SIMULACRO" | "TEST" | null>(null);
   const [convocatoriaTestId, setConvocatoriaTestId] = useState<number | null>(null);
   const [modoTest, setModoTest] = useState<"TEMA" | "NORMA">("TEMA");
@@ -321,6 +322,26 @@ export default function Home() {
   function itemSoloLectura(item: SimulacroListado): boolean {
     return Boolean(modoHistoricoPostBaja && !item.es_prueba_gratuita);
   }
+
+  const actividadReciente = useMemo(
+    () =>
+      [...misSimulacros, ...misTests]
+        .sort(
+          (a, b) =>
+            new Date(b.fecha_generacion).getTime() -
+            new Date(a.fecha_generacion).getTime()
+        )
+        .slice(0, 4),
+    [misSimulacros, misTests]
+  );
+
+  const totalPruebas = misSimulacros.length + misTests.length;
+  const totalPendientes = [...misSimulacros, ...misTests].filter(
+    (item) => item.estado !== "FINALIZADO"
+  ).length;
+  const totalCorregidas = totalPruebas - totalPendientes;
+
+  const inicialUsuario = (me?.email?.trim()?.[0] ?? "O").toUpperCase();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -955,6 +976,36 @@ export default function Home() {
     setPassword("");
   }
 
+  async function crearCuenta(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    setMensaje("");
+    setOcupado(true);
+    setAccionEnCurso("Creando cuenta...");
+
+    const { data, error: authError } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+    });
+
+    setOcupado(false);
+    setAccionEnCurso(null);
+
+    if (authError) {
+      setError(authError.message);
+      return;
+    }
+
+    setPassword("");
+
+    if (!data.session) {
+      setMensaje(
+        "Cuenta creada. Revisa tu correo electrónico si Supabase requiere confirmar la dirección antes de entrar."
+      );
+      setPantallaPublica("LOGIN");
+    }
+  }
+
   async function cerrarSesion() {
     await supabase.auth.signOut();
   }
@@ -1238,179 +1289,550 @@ export default function Home() {
   }
 
   if (!session) {
-    return (
-      <main className="login">
-        <section className="card">
-          <h1>OpoCoach</h1>
-          <p className="muted">Acceso de pruebas a la nueva aplicación web.</p>
+    if (pantallaPublica === "LANDING") {
+      return (
+        <main className="public-site">
+          <header className="public-header">
+            <button
+              type="button"
+              className="brand public-brand"
+              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              aria-label="OpoCoach"
+            >
+              <span className="brand-mark">O</span>
+              <span>OpoCoach</span>
+            </button>
 
-          {error && (
-            <div className="error">
-              {error}
-            </div>
-          )}
+            <nav className="public-nav" aria-label="Navegación pública">
+              <a href="#como-funciona">Cómo funciona</a>
+              <a href="#simulacros">Simulacros</a>
+              <a href="#tests">Tests</a>
+              <a href="#precio">Precio</a>
+            </nav>
 
-          <form onSubmit={iniciarSesion}>
-            <label htmlFor="email">Correo electrónico</label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="username"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-
-            <label htmlFor="password">Contraseña</label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-
-            <div style={{ marginTop: 18 }}>
-              <button className="primary" disabled={ocupado} type="submit">
-                {ocupado ? "Entrando..." : "Entrar"}
+            <div className="public-header-actions">
+              <button
+                type="button"
+                className="secondary compact-button"
+                onClick={() => {
+                  setError("");
+                  setMensaje("");
+                  setPantallaPublica("LOGIN");
+                }}
+              >
+                Iniciar sesión
+              </button>
+              <button
+                type="button"
+                className="primary compact-button"
+                onClick={() => {
+                  setError("");
+                  setMensaje("");
+                  setPantallaPublica("REGISTRO");
+                }}
+              >
+                Probar gratis
               </button>
             </div>
-          </form>
+          </header>
+
+          <section className="public-hero">
+            <div className="public-hero-copy">
+              <span className="public-kicker">Preparación inteligente de oposiciones</span>
+              <h1>Entrena como te examinan. Corrige como necesitas aprender.</h1>
+              <p>
+                OpoCoach combina simulacros, tests dirigidos y análisis de tus
+                respuestas para que practiques con criterio y detectes dónde
+                necesitas reforzar.
+              </p>
+
+              <div className="public-hero-actions">
+                <button
+                  type="button"
+                  className="primary public-cta"
+                  onClick={() => {
+                    setError("");
+                    setMensaje("");
+                    setPantallaPublica("REGISTRO");
+                  }}
+                >
+                  Hacer un test gratis
+                </button>
+                <button
+                  type="button"
+                  className="secondary public-cta"
+                  onClick={() =>
+                    document
+                      .getElementById("como-funciona")
+                      ?.scrollIntoView({ behavior: "smooth" })
+                  }
+                >
+                  Ver cómo funciona
+                </button>
+              </div>
+
+              <div className="public-trust-line">
+                <span>1 test gratuito</span>
+                <span>Hasta 10 preguntas</span>
+                <span>Corrección y PDFs incluidos</span>
+              </div>
+            </div>
+
+            <div className="public-value-panel" aria-label="Qué ofrece OpoCoach">
+              <span className="eyebrow">Todo tu entrenamiento en un solo lugar</span>
+              <div className="value-step">
+                <span className="value-step-number">01</span>
+                <div>
+                  <strong>Simula el examen</strong>
+                  <p>
+                    Practica con pruebas completas construidas para tu convocatoria.
+                  </p>
+                </div>
+              </div>
+              <div className="value-step">
+                <span className="value-step-number">02</span>
+                <div>
+                  <strong>Refuerza lo que necesitas</strong>
+                  <p>
+                    Crea tests por temas o por leyes y normas concretas.
+                  </p>
+                </div>
+              </div>
+              <div className="value-step">
+                <span className="value-step-number">03</span>
+                <div>
+                  <strong>Corrige con más información</strong>
+                  <p>
+                    Revisa resultados y compáralos con la seguridad con la que respondes.
+                  </p>
+                </div>
+              </div>
+              <div className="value-step">
+                <span className="value-step-number">04</span>
+                <div>
+                  <strong>Resuelve dudas y profundiza</strong>
+                  <p>
+                    Consulta tus dudas con el apoyo del contenido de tu temario o explora conocimiento general para comprender mejor cada materia.
+                  </p>
+                </div>
+              </div>
+              <div className="value-trial">
+                <strong>Empieza sin pagar</strong>
+                <span>1 test gratuito · hasta 10 preguntas · corrección y PDFs incluidos</span>
+              </div>
+            </div>
+          </section>
+
+          <section className="public-proof" id="como-funciona">
+            <div>
+              <span className="eyebrow">Cómo funciona</span>
+              <h2>Una herramienta para practicar, corregir y mejorar</h2>
+            </div>
+
+            <div className="public-feature-grid">
+              <article id="simulacros">
+                <span className="public-feature-number">01</span>
+                <h3>Simulacros completos</h3>
+                <p>
+                  Practica con pruebas construidas para reproducir la estructura
+                  de la convocatoria y trabaja también con tu nivel de seguridad.
+                </p>
+              </article>
+
+              <article id="tests">
+                <span className="public-feature-number">02</span>
+                <h3>Tests dirigidos</h3>
+                <p>
+                  Elige temas o leyes y normas concretas para reforzar exactamente
+                  las materias que necesitas trabajar.
+                </p>
+              </article>
+
+              <article>
+                <span className="public-feature-number">03</span>
+                <h3>Corrección útil</h3>
+                <p>
+                  Revisa aciertos, errores, respuestas no contestadas y la
+                  seguridad con la que respondiste para detectar riesgos reales.
+                </p>
+              </article>
+            </div>
+          </section>
+
+          <section className="public-highlight">
+            <div>
+              <span className="eyebrow">No sólo una nota</span>
+              <h2>Entiende también cómo estás respondiendo</h2>
+              <p>
+                OpoCoach conserva tus resultados y te permite revisar el
+                rendimiento acumulado por temas, normas y nivel de seguridad.
+              </p>
+            </div>
+            <div className="highlight-stats">
+              <div>
+                <span>Por tema</span>
+                <strong>Detecta tus puntos débiles</strong>
+              </div>
+              <div>
+                <span>Por norma</span>
+                <strong>Localiza dónde reforzar</strong>
+              </div>
+              <div>
+                <span>Por seguridad</span>
+                <strong>Identifica errores de exceso de confianza</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="public-pricing" id="precio">
+            <div>
+              <span className="eyebrow">Precio sencillo</span>
+              <h2>Prueba OpoCoach antes de suscribirte</h2>
+              <p>
+                Empieza con un test gratuito de hasta 10 preguntas. Si te resulta
+                útil, activa el acceso completo.
+              </p>
+            </div>
+
+            <div className="pricing-card">
+              <span className="pricing-name">OpoCoach</span>
+              <div className="pricing-price">
+                <strong>10 €</strong>
+                <span>/ mes</span>
+              </div>
+              <ul>
+                <li>Simulacros completos</li>
+                <li>Tests por temas y normas</li>
+                <li>Corrección y análisis acumulado</li>
+                <li>PDFs de preguntas y soluciones</li>
+                <li>Chat de apoyo de la convocatoria</li>
+              </ul>
+              <button
+                type="button"
+                className="primary public-cta"
+                onClick={() => {
+                  setError("");
+                  setMensaje("");
+                  setPantallaPublica("REGISTRO");
+                }}
+              >
+                Probar gratis
+              </button>
+              <span className="pricing-note">
+                La prueba gratuita incluye un test de hasta 10 preguntas.
+              </span>
+            </div>
+          </section>
+
+          <section className="public-final-cta">
+            <div>
+              <span className="eyebrow">Empieza ahora</span>
+              <h2>Haz tu primer test y comprueba cómo trabaja OpoCoach.</h2>
+            </div>
+            <button
+              type="button"
+              className="primary public-cta"
+              onClick={() => {
+                setError("");
+                setMensaje("");
+                setPantallaPublica("REGISTRO");
+              }}
+            >
+              Crear cuenta y probar
+            </button>
+          </section>
+
+          <footer className="public-footer">
+            <strong>OpoCoach</strong>
+            <span>Preparación de oposiciones</span>
+          </footer>
+        </main>
+      );
+    }
+
+    const esRegistro = pantallaPublica === "REGISTRO";
+
+    return (
+      <main className="auth-shell">
+        <button
+          type="button"
+          className="auth-back"
+          onClick={() => {
+            setError("");
+            setMensaje("");
+            setPantallaPublica("LANDING");
+          }}
+        >
+          ← Volver a OpoCoach
+        </button>
+
+        <section className="auth-layout">
+          <div className="auth-intro">
+            <button
+              type="button"
+              className="brand auth-brand"
+              onClick={() => setPantallaPublica("LANDING")}
+            >
+              <span className="brand-mark">O</span>
+              <span>OpoCoach</span>
+            </button>
+
+            <span className="public-kicker">
+              {esRegistro ? "Empieza con una prueba gratuita" : "Bienvenido de nuevo"}
+            </span>
+            <h1>
+              {esRegistro
+                ? "Crea tu cuenta y haz tu primer test."
+                : "Continúa con tu preparación."}
+            </h1>
+            <p>
+              {esRegistro
+                ? "La cuenta gratuita te permite realizar un test de hasta 10 preguntas con corrección y PDFs."
+                : "Accede a tus simulacros, tests, resultados y herramientas de preparación."}
+            </p>
+
+            <div className="auth-points">
+              <span>Simulacros y tests</span>
+              <span>Corrección por seguridad</span>
+              <span>Histórico y PDFs</span>
+            </div>
+          </div>
+
+          <div className="auth-card">
+            <span className="eyebrow">
+              {esRegistro ? "Crear cuenta" : "Acceso"}
+            </span>
+            <h2>{esRegistro ? "Prueba OpoCoach gratis" : "Iniciar sesión"}</h2>
+
+            {error && <div className="error">{error}</div>}
+            {mensaje && <div className="success">{mensaje}</div>}
+
+            <form onSubmit={esRegistro ? crearCuenta : iniciarSesion}>
+              <label htmlFor="email">Correo electrónico</label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+
+              <label htmlFor="password">Contraseña</label>
+              <input
+                id="password"
+                type="password"
+                autoComplete={esRegistro ? "new-password" : "current-password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                minLength={6}
+                required
+              />
+
+              <button
+                className="primary auth-submit"
+                disabled={ocupado}
+                type="submit"
+              >
+                {ocupado
+                  ? esRegistro
+                    ? "Creando cuenta..."
+                    : "Entrando..."
+                  : esRegistro
+                    ? "Crear cuenta"
+                    : "Entrar"}
+              </button>
+            </form>
+
+            <div className="auth-switch">
+              <span>
+                {esRegistro ? "¿Ya tienes cuenta?" : "¿Todavía no tienes cuenta?"}
+              </span>
+              <button
+                type="button"
+                className="text-action"
+                onClick={() => {
+                  setError("");
+                  setMensaje("");
+                  setPantallaPublica(esRegistro ? "LOGIN" : "REGISTRO");
+                }}
+              >
+                {esRegistro ? "Iniciar sesión" : "Probar gratis"}
+              </button>
+            </div>
+          </div>
         </section>
       </main>
     );
   }
 
   return (
-    <main className="page">
-      <section className="card">
-        <div className="row space-between">
-          <div>
-            <h1>OpoCoach Web</h1>
-            <div className="muted">
-              {me ? `${me.email} · ${me.id}` : "Cargando usuario..."}
-            </div>
-          </div>
-          <button className="secondary" onClick={cerrarSesion}>
-            Cerrar sesión
-          </button>
-        </div>
-      </section>
-
+    <main className="page app-page">
       {simulacroId === null && (
-        <section className="card billing-test-card">
-          <div className="row space-between">
-            <div>
-              <h2>Suscripción de prueba</h2>
-              <p className="muted">
-                Stripe Sandbox · OpoCoach · 10,00 € al mes.
-                No se realizan cobros reales.
-              </p>
-              {estadoSuscripcion && (
-                <p>
-                  Estado verificado:{" "}
-                  <strong>
-                    {estadoSuscripcion.pago_pendiente
-                      ? "Pago pendiente"
-                      : estadoSuscripcion.suscrito
-                        ? estadoSuscripcion.cancelacion_programada
-                          ? `Suscripción activa hasta ${
-                              formatearFechaSuscripcion(
-                                estadoSuscripcion.cancel_at ??
-                                  estadoSuscripcion.current_period_end
-                              ) ?? "la fecha de cancelación"
-                            }`
-                          : "Suscripción activa"
-                        : estadoSuscripcion.status}
-                  </strong>
-                </p>
-              )}
-              {estadoSuscripcion?.pago_pendiente && (
-                <div className="working inline-feedback">
-                  No hemos podido renovar tu suscripción. Tu acceso continúa
-                  temporalmente. Revisa tu método de pago desde Gestionar
-                  suscripción.
-                </div>
-              )}
-              {checkoutRetorno === "success" && (
-                <div className="success inline-feedback">
-                  <div>
-                    Stripe ha devuelto el pago como completado. El acceso solo
-                    se considera activo cuando el webhook firmado haya
-                    actualizado PostgreSQL.
-                  </div>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={actualizarSuscripcion}
-                  >
-                    Comprobar suscripción
-                  </button>
-                </div>
-              )}
-              {checkoutRetorno === "cancel" && (
-                <div className="working inline-feedback">
-                  Pago cancelado. No se ha activado ninguna suscripción.
-                </div>
-              )}
-            </div>
-            {estadoSuscripcion?.suscrito ? (
-              <div className="actions">
-                <span className="status status-finished">
+        <>
+          <header className="app-header">
+            <button
+              type="button"
+              className="brand"
+              onClick={() => setSeccion("INICIO")}
+              aria-label="Ir al inicio"
+            >
+              <span className="brand-mark">O</span>
+              <span>OpoCoach</span>
+            </button>
+
+            <nav className="app-nav" aria-label="Navegación principal">
+              <button
+                type="button"
+                className={seccion === "INICIO" ? "nav-link active" : "nav-link"}
+                onClick={() => setSeccion("INICIO")}
+              >
+                Inicio
+              </button>
+              <button
+                type="button"
+                className={seccion === "SIMULACROS" ? "nav-link active" : "nav-link"}
+                onClick={() => setSeccion("SIMULACROS")}
+              >
+                Simulacros
+              </button>
+              <button
+                type="button"
+                className={seccion === "TESTS" ? "nav-link active" : "nav-link"}
+                onClick={() => setSeccion("TESTS")}
+              >
+                Tests
+              </button>
+              <button
+                type="button"
+                className={seccion === "CHAT" ? "nav-link active" : "nav-link"}
+                onClick={() => setSeccion("CHAT")}
+              >
+                Chat
+              </button>
+            </nav>
+
+            <div className="account-area">
+              {estadoSuscripcion?.suscrito && (
+                <button
+                  type="button"
+                  className="plan-chip"
+                  disabled={ocupado}
+                  onClick={abrirPortalSuscripcion}
+                  title="Gestionar suscripción"
+                >
                   {estadoSuscripcion.pago_pendiente
                     ? "Pago pendiente"
                     : estadoSuscripcion.cancelacion_programada
-                      ? "Activa · baja programada"
-                      : "Activa"}
-                </span>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={ocupado}
-                  onClick={abrirPortalSuscripcion}
-                >
-                  {accionEnCurso === "Abriendo gestión de suscripción..."
-                    ? "Abriendo..."
-                    : "Gestionar suscripción"}
+                      ? "Plan activo · baja programada"
+                      : "Plan activo"}
                 </button>
+              )}
+              <div className="account-identity">
+                <span className="account-avatar">{inicialUsuario}</span>
+                <span className="account-email">
+                  {me?.email ?? "Usuario"}
+                </span>
               </div>
-            ) : (
               <button
-                className="primary"
-                disabled={ocupado}
-                onClick={abrirCheckout}
+                type="button"
+                className="logout-button"
+                onClick={cerrarSesion}
+                title="Cerrar sesión"
               >
-                {accionEnCurso === "Abriendo pago seguro de Stripe..."
-                  ? "Abriendo Stripe..."
-                  : "Probar suscripción"}
+                Salir
               </button>
-            )}
-          </div>
-        </section>
-      )}
+            </div>
+          </header>
 
-      {simulacroId === null && (
-        <nav className="main-tabs">
-          <button
-            className={seccion === "SIMULACROS" ? "tab active" : "tab"}
-            onClick={() => setSeccion("SIMULACROS")}
-          >
-            Simulacros
-          </button>
-          <button
-            className={seccion === "TESTS" ? "tab active" : "tab"}
-            onClick={() => setSeccion("TESTS")}
-          >
-            Tests
-          </button>
-          <button
-            className={seccion === "CHAT" ? "tab active" : "tab"}
-            onClick={() => setSeccion("CHAT")}
-          >
-            Chat
-          </button>
-        </nav>
+          {estadoSuscripcion &&
+            (
+              !estadoSuscripcion.suscrito ||
+              estadoSuscripcion.pago_pendiente ||
+              estadoSuscripcion.cancelacion_programada ||
+              checkoutRetorno === "success" ||
+              checkoutRetorno === "cancel"
+            ) && (
+            <section
+              className={
+                estadoSuscripcion.pago_pendiente
+                  ? "subscription-banner subscription-warning"
+                  : estadoSuscripcion.cancelacion_programada
+                    ? "subscription-banner subscription-info"
+                    : "subscription-banner"
+              }
+            >
+              <div>
+                <strong>
+                  {estadoSuscripcion.pago_pendiente
+                    ? "Hay un problema con el pago"
+                    : estadoSuscripcion.cancelacion_programada
+                      ? `Suscripción activa hasta ${
+                          formatearFechaSuscripcion(
+                            estadoSuscripcion.cancel_at ??
+                              estadoSuscripcion.current_period_end
+                          ) ?? "la fecha de baja"
+                        }`
+                      : estadoSuscripcion.suscrito
+                        ? "Suscripción activa"
+                        : estadoSuscripcion.prueba_gratuita_disponible
+                          ? "Prueba gratuita disponible"
+                          : "Suscripción no activa"}
+                </strong>
+                <span>
+                  {estadoSuscripcion.pago_pendiente
+                    ? "Tu acceso continúa temporalmente. Revisa tu método de pago."
+                    : estadoSuscripcion.cancelacion_programada
+                      ? "Conservas el acceso completo hasta la fecha indicada."
+                      : estadoSuscripcion.prueba_gratuita_disponible
+                        ? "Puedes realizar un test gratuito de hasta 10 preguntas con todas sus funciones."
+                        : "Activa una suscripción para crear nuevas pruebas y utilizar todas las funciones."}
+                </span>
+
+                {checkoutRetorno === "success" && (
+                  <span>
+                    Stripe ha completado el pago. Puedes comprobar de nuevo el estado si el webhook todavía está procesándose.
+                  </span>
+                )}
+                {checkoutRetorno === "cancel" && (
+                  <span>El proceso de pago se ha cancelado.</span>
+                )}
+              </div>
+
+              <div className="subscription-actions">
+                {estadoSuscripcion.suscrito ? (
+                  <button
+                    type="button"
+                    className="secondary compact-button"
+                    disabled={ocupado}
+                    onClick={abrirPortalSuscripcion}
+                  >
+                    Gestionar suscripción
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="primary compact-button"
+                    disabled={ocupado}
+                    onClick={abrirCheckout}
+                  >
+                    Activar suscripción
+                  </button>
+                )}
+
+                {checkoutRetorno === "success" && (
+                  <button
+                    type="button"
+                    className="secondary compact-button"
+                    onClick={actualizarSuscripcion}
+                  >
+                    Comprobar estado
+                  </button>
+                )}
+              </div>
+            </section>
+          )}
+        </>
       )}
 
       {(error || mensaje || accionEnCurso) && (
@@ -1446,6 +1868,168 @@ export default function Home() {
               <div className="feedback-text">{accionEnCurso}</div>
             </div>
           )}
+        </div>
+      )}
+
+      {simulacroId === null && seccion === "INICIO" && (
+        <div className="home-dashboard">
+          <section className="home-hero">
+            <div>
+              <span className="eyebrow">Tu preparación</span>
+              <h1>Prepárate con criterio, no sólo con más preguntas.</h1>
+              <p>
+                Simulacros completos, tests dirigidos y correcciones que te ayudan
+                a detectar dónde fallas y con qué nivel de seguridad respondes.
+              </p>
+              <div className="hero-actions">
+                <button
+                  type="button"
+                  className="primary primary-large"
+                  onClick={() => setSeccion("SIMULACROS")}
+                >
+                  Crear simulacro
+                </button>
+                <button
+                  type="button"
+                  className="secondary primary-large"
+                  onClick={() => setSeccion("TESTS")}
+                >
+                  Crear test
+                </button>
+              </div>
+            </div>
+
+            <div className="hero-summary">
+              <span className="summary-label">Tu actividad</span>
+              <strong>{totalPruebas}</strong>
+              <span>pruebas guardadas</span>
+              <div className="summary-divider" />
+              <div className="summary-mini-grid">
+                <div>
+                  <strong>{totalPendientes}</strong>
+                  <span>Pendientes</span>
+                </div>
+                <div>
+                  <strong>{totalCorregidas}</strong>
+                  <span>Corregidas</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="home-grid">
+            <div className="home-panel home-panel-wide">
+              <div className="panel-heading">
+                <div>
+                  <span className="eyebrow">Actividad reciente</span>
+                  <h2>Continúa donde lo dejaste</h2>
+                </div>
+                {actividadReciente.length > 0 && (
+                  <span className="muted">{actividadReciente.length} recientes</span>
+                )}
+              </div>
+
+              {actividadReciente.length === 0 ? (
+                <div className="empty-state">
+                  <strong>Aún no tienes pruebas guardadas</strong>
+                  <span>
+                    Crea tu primer simulacro o construye un test por temas o normas.
+                  </span>
+                </div>
+              ) : (
+                <div className="recent-list">
+                  {actividadReciente.map((item) => (
+                    <button
+                      type="button"
+                      className="recent-item"
+                      key={`${item.tipo_prueba}-${item.id}`}
+                      onClick={() => abrirSimulacro(item)}
+                    >
+                      <span
+                        className={
+                          item.tipo_prueba === "SIMULACRO"
+                            ? "recent-icon recent-icon-blue"
+                            : "recent-icon recent-icon-green"
+                        }
+                      >
+                        {item.tipo_prueba === "SIMULACRO" ? "S" : "T"}
+                      </span>
+                      <span className="recent-main">
+                        <strong>
+                          {item.tipo_prueba === "SIMULACRO" ? "Simulacro" : "Test"} Nº {item.numero}
+                        </strong>
+                        <span>
+                          {item.convocatoria_codigo ?? `Convocatoria ${item.convocatoria_id}`} ·{" "}
+                          {item.total_preguntas} preguntas · {item.contestadas} contestadas
+                        </span>
+                      </span>
+                      <span
+                        className={
+                          item.estado === "FINALIZADO"
+                            ? "status status-finished"
+                            : "status status-pending"
+                        }
+                      >
+                        {item.estado === "FINALIZADO" ? "Corregido" : "Pendiente"}
+                      </span>
+                      <span className="recent-action">
+                        {item.estado === "FINALIZADO"
+                          ? "Ver corrección"
+                          : itemSoloLectura(item)
+                            ? "Ver"
+                            : "Continuar"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <aside className="home-panel">
+              <span className="eyebrow">Convocatorias</span>
+              <h2>Tu espacio de preparación</h2>
+              <p className="muted">
+                {convocatorias.length === 1
+                  ? "Tienes 1 convocatoria disponible."
+                  : `Tienes ${convocatorias.length} convocatorias disponibles.`}
+              </p>
+
+              <div className="convocatoria-summary-list">
+                {convocatorias.map((convocatoria) => (
+                  <div className="convocatoria-summary" key={convocatoria.id}>
+                    <span className="convocatoria-code">{convocatoria.codigo}</span>
+                    <strong>{convocatoria.puesto}</strong>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                className="text-action"
+                onClick={() => setSeccion("CHAT")}
+              >
+                Consultar OpoCoach →
+              </button>
+            </aside>
+          </section>
+
+          <section className="feature-strip">
+            <div>
+              <span className="feature-number">01</span>
+              <strong>Simula el examen</strong>
+              <span>Practica con la estructura de tu convocatoria.</span>
+            </div>
+            <div>
+              <span className="feature-number">02</span>
+              <strong>Refuerza puntos concretos</strong>
+              <span>Construye tests por temas o por leyes y normas.</span>
+            </div>
+            <div>
+              <span className="feature-number">03</span>
+              <strong>Revisa cómo respondes</strong>
+              <span>Compara aciertos, errores y seguridad declarada.</span>
+            </div>
+          </section>
         </div>
       )}
 

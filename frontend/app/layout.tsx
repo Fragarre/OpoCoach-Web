@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "OpoCoach",
-  description: "Preparación de oposiciones",
+  description: "Simulacros, tests y análisis para preparar tu oposición",
 };
 
 export default function RootLayout({
