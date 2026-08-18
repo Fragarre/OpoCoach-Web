@@ -20,6 +20,7 @@ from reportlab.platypus import (
 )
 
 from app.postgres import conectar_postgres
+from app.explicaciones_soluciones import generar_comentarios_soluciones
 from app.simulacros import obtener_simulacro
 
 
@@ -133,6 +134,13 @@ def generar_pdf_soluciones(
     simulacro = obtener_simulacro(simulacro_id, user_id)
     if simulacro is None:
         raise ValueError("El simulacro no existe.")
+
+    # Igual que en Streamlit: generar sólo comentarios pendientes antes de
+    # construir el PDF y volver a leer después los snapshots actualizados.
+    generar_comentarios_soluciones(
+        simulacro_id=simulacro_id,
+        user_id=user_id,
+    )
 
     soluciones = _cargar_soluciones(simulacro_id, user_id)
     if not soluciones:

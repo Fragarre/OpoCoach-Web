@@ -45,3 +45,48 @@ def generar_analisis_rendimiento_ia(
         )
 
     return texto
+
+
+def seleccionar_fragmento_json(
+    prompt: str,
+    modelo: str = "gpt-5.4-mini",
+    operacion: str = "general",
+):
+    """
+    Ejecuta una llamada a Responses API y convierte la salida en JSON.
+
+    Admite JSON puro y, como tolerancia defensiva, elimina un único bloque
+    Markdown ```json ... ``` si el modelo lo hubiera añadido.
+    """
+    import json
+    import re
+
+    api_key = os.getenv("OPENAI_API_KEY_OPOCOACH")
+    if not api_key:
+        raise RuntimeError(
+            "Falta OPENAI_API_KEY_OPOCOACH en la configuración del backend."
+        )
+
+    cliente = OpenAI(api_key=api_key)
+    respuesta = cliente.responses.create(
+        model=modelo,
+        input=prompt,
+    )
+
+    texto = str(respuesta.output_text or "").strip()
+    bloque = re.fullmatch(
+        r"```(?:json)?\s*(.*?)\s*```",
+        texto,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if bloque:
+        texto = bloque.group(1).strip()
+
+    try:
+        return json.loads(texto)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "La API no devolvió un JSON válido. "
+            f"Respuesta recibida: {texto[:500]}"
+        ) from exc
+
