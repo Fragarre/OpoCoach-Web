@@ -58,6 +58,65 @@ type Resultado = {
   nota: number;
 };
 
+type AcumuladoTema = {
+  tema_id: number | null;
+  parte: string;
+  numero_tema: number;
+  titulo: string;
+  preguntas: number;
+  contestadas: number;
+  no_contestadas: number;
+  aciertos: number;
+  fallos: number;
+  fallos_seguro: number;
+  porcentaje_convocatoria: number;
+  porcentaje_aciertos: number;
+  porcentaje_fallos: number;
+  porcentaje_no_contestadas: number;
+  porcentaje_aciertos_contestadas: number;
+};
+
+type AcumuladoNorma = {
+  norma: string;
+  preguntas: number;
+  contestadas: number;
+  no_contestadas: number;
+  aciertos: number;
+  fallos: number;
+  fallos_seguro: number;
+  porcentaje_convocatoria: number;
+  porcentaje_aciertos: number;
+  porcentaje_fallos: number;
+  porcentaje_no_contestadas: number;
+  porcentaje_aciertos_contestadas: number;
+};
+
+type AcumuladoSeguridad = {
+  codigo: "SEGURO" | "MENOS_SEGURO";
+  seguridad: string;
+  contestadas: number;
+  aciertos: number;
+  fallos: number;
+  porcentaje_aciertos: number;
+  porcentaje_fallos: number;
+};
+
+type ResultadoAcumulado = {
+  convocatoria_id: number;
+  tipo_prueba: "SIMULACRO" | "TEST";
+  simulacros: number;
+  simulacros_ids: number[];
+  preguntas: number;
+  contestadas: number;
+  no_contestadas: number;
+  aciertos: number;
+  fallos: number;
+  temas: AcumuladoTema[];
+  normas: AcumuladoNorma[];
+  seguridad: AcumuladoSeguridad[];
+  firma_datos: string;
+};
+
 type SimulacroListado = {
   id: number;
   convocatoria_id: number;
@@ -134,6 +193,7 @@ export default function Home() {
   const [evaluarSeguridad, setEvaluarSeguridad] = useState(false);
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [correccion, setCorreccion] = useState<PreguntaCorregida[]>([]);
+  const [resultadoAcumulado, setResultadoAcumulado] = useState<ResultadoAcumulado | null>(null);
   const [mensaje, setMensaje] = useState("");
   const [error, setError] = useState("");
   const [ocupado, setOcupado] = useState(false);
@@ -243,6 +303,7 @@ export default function Home() {
     setEvaluarSeguridad(false);
     setResultado(null);
     setCorreccion([]);
+    setResultadoAcumulado(null);
     setSimulacroId(null);
     setTipoActivo(null);
   }
@@ -294,17 +355,21 @@ export default function Home() {
 
     try {
       if (simulacro.estado === "FINALIZADO") {
-        const [res, corr] = await Promise.all([
+        const [res, corr, acumulado] = await Promise.all([
           apiFetch<Resultado>(
             `api/v1/simulacros/${simulacro.id}/resultado`
           ),
           apiFetch<PreguntaCorregida[]>(
             `api/v1/simulacros/${simulacro.id}/correccion`
           ),
+          apiFetch<ResultadoAcumulado>(
+            `api/v1/simulacros/${simulacro.id}/acumulado`
+          ),
         ]);
         setSimulacroId(simulacro.id);
         setResultado(res);
         setCorreccion(corr);
+        setResultadoAcumulado(acumulado);
       } else {
         const lista = await apiFetch<Pregunta[]>(
           `api/v1/simulacros/${simulacro.id}/preguntas`
@@ -657,12 +722,18 @@ export default function Home() {
         { method: "POST" }
       );
 
-      const corr = await apiFetch<PreguntaCorregida[]>(
-        `api/v1/simulacros/${simulacroId}/correccion`
-      );
+      const [corr, acumulado] = await Promise.all([
+        apiFetch<PreguntaCorregida[]>(
+          `api/v1/simulacros/${simulacroId}/correccion`
+        ),
+        apiFetch<ResultadoAcumulado>(
+          `api/v1/simulacros/${simulacroId}/acumulado`
+        ),
+      ]);
 
       setResultado(res);
       setCorreccion(corr);
+      setResultadoAcumulado(acumulado);
       await recargarListaActiva();
       setMensaje(`${tipoActivo === "TEST" ? "Test" : "Simulacro"} calificado correctamente.`);
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -861,6 +932,146 @@ export default function Home() {
             <div><strong>{resultado.no_contestadas}</strong><span>No contestadas</span></div>
             <div><strong>{resultado.puntos.toFixed(3)}</strong><span>Puntos</span></div>
           </div>
+        </section>
+      )}
+
+      {resultado && resultadoAcumulado && (
+        <section className="card">
+          <h2>Rendimiento acumulado de la convocatoria</h2>
+          {resultadoAcumulado.simulacros <= 0 ? (
+            <p className="muted">
+              Todavía no existen pruebas corregidas para mostrar estadísticas acumuladas.
+            </p>
+          ) : (
+            <>
+              <p className="muted">
+                Las tablas siguientes corresponden a todos los{" "}
+                {resultadoAcumulado.tipo_prueba === "TEST" ? "tests" : "simulacros"}{" "}
+                corregidos que se conservan actualmente en esta convocatoria, no
+                únicamente a la prueba abierta. Si se modifica o elimina una prueba,
+                los resultados se recalculan automáticamente.
+              </p>
+
+              <p>
+                <strong>Datos acumulados:</strong>{" "}
+                {resultadoAcumulado.simulacros}{" "}
+                {resultadoAcumulado.tipo_prueba === "TEST" ? "tests" : "simulacros"} ·{" "}
+                {resultadoAcumulado.preguntas} preguntas ·{" "}
+                {resultadoAcumulado.contestadas} contestadas ·{" "}
+                {resultadoAcumulado.no_contestadas} no contestadas.
+              </p>
+
+              <h3>Resultados acumulados por tema</h3>
+              <div style={{ overflowX: "auto" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Tema</th>
+                      <th>Preguntas</th>
+                      <th>% acumulado</th>
+                      <th>Aciertos</th>
+                      <th>% aciertos</th>
+                      <th>Fallos</th>
+                      <th>% fallos</th>
+                      <th>No contestadas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resultadoAcumulado.temas.map((tema) => (
+                      <tr key={`${tema.parte}-${tema.numero_tema}-${tema.titulo}`}>
+                        <td>{tema.parte} {tema.numero_tema}. {tema.titulo}</td>
+                        <td>{tema.preguntas}</td>
+                        <td>{tema.porcentaje_convocatoria.toFixed(1)} %</td>
+                        <td>{tema.aciertos}</td>
+                        <td>{tema.porcentaje_aciertos.toFixed(1)} %</td>
+                        <td>{tema.fallos}</td>
+                        <td>{tema.porcentaje_fallos.toFixed(1)} %</td>
+                        <td>{tema.no_contestadas}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="muted">
+                El porcentaje acumulado indica el peso de cada tema sobre todas las
+                preguntas analizadas. Los porcentajes de aciertos y fallos se calculan
+                sobre el total de preguntas de ese tema.
+              </p>
+
+              <h3>Resultados acumulados por ley o norma</h3>
+              <div style={{ overflowX: "auto" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Ley o norma</th>
+                      <th>Preguntas</th>
+                      <th>% acumulado</th>
+                      <th>Aciertos</th>
+                      <th>% aciertos</th>
+                      <th>Fallos</th>
+                      <th>% fallos</th>
+                      <th>No contestadas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resultadoAcumulado.normas.map((norma) => (
+                      <tr key={norma.norma}>
+                        <td>{norma.norma}</td>
+                        <td>{norma.preguntas}</td>
+                        <td>{norma.porcentaje_convocatoria.toFixed(1)} %</td>
+                        <td>{norma.aciertos}</td>
+                        <td>{norma.porcentaje_aciertos.toFixed(1)} %</td>
+                        <td>{norma.fallos}</td>
+                        <td>{norma.porcentaje_fallos.toFixed(1)} %</td>
+                        <td>{norma.no_contestadas}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="muted">
+                Las preguntas jurídicas se agrupan por la ley o norma congelada en
+                cada prueba. Las preguntas de informática aparecen agrupadas como
+                «Informática».
+              </p>
+
+              {resultadoAcumulado.seguridad.length > 0 && (
+                <>
+                  <h3>Resultados acumulados por nivel de seguridad</h3>
+                  <div style={{ overflowX: "auto" }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Seguridad</th>
+                          <th>Contestadas</th>
+                          <th>Aciertos</th>
+                          <th>% aciertos</th>
+                          <th>Fallos</th>
+                          <th>% fallos</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resultadoAcumulado.seguridad.map((seguridad) => (
+                          <tr key={seguridad.codigo}>
+                            <td>{seguridad.seguridad}</td>
+                            <td>{seguridad.contestadas}</td>
+                            <td>{seguridad.aciertos}</td>
+                            <td>{seguridad.porcentaje_aciertos.toFixed(1)} %</td>
+                            <td>{seguridad.fallos}</td>
+                            <td>{seguridad.porcentaje_fallos.toFixed(1)} %</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="muted">
+                    Los porcentajes se calculan únicamente sobre las preguntas
+                    contestadas en pruebas en las que se valoró la seguridad.
+                  </p>
+                </>
+              )}
+            </>
+          )}
         </section>
       )}
 

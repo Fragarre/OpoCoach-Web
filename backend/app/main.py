@@ -47,6 +47,7 @@ from app.simulacros import (
     listar_simulacros,
     eliminar_simulacro,
     obtener_resultado_guardado,
+    obtener_resultado_acumulado,
 )
 
 app = FastAPI(
@@ -384,6 +385,21 @@ def resultado_simulacro_guardado_api(
         return ResultadoSimulacro(
             **obtener_resultado_guardado(simulacro_id, usuario.id)
         )
+    except ValueError as exc:
+        mensaje = str(exc)
+        codigo = 404 if "no existe" in mensaje.lower() else 400
+        raise HTTPException(status_code=codigo, detail=mensaje) from exc
+
+
+
+
+@app.get("/api/v1/simulacros/{simulacro_id}/acumulado")
+def resultado_acumulado_api(
+    simulacro_id: int,
+    usuario: UsuarioAutenticado = Depends(usuario_actual),
+) -> dict:
+    try:
+        return obtener_resultado_acumulado(simulacro_id, usuario.id)
     except ValueError as exc:
         mensaje = str(exc)
         codigo = 404 if "no existe" in mensaje.lower() else 400
