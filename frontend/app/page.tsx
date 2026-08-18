@@ -102,9 +102,8 @@ const ORIGENES = ["A1", "A2", "C1", "C2"] as const;
 const FUENTES = ["REAL", "IA"] as const;
 
 const SEGURIDADES = [
-  ["MUY_SEGURO", "Muy seguro"],
-  ["BASTANTE_SEGURO", "Bastante seguro"],
-  ["POCO_SEGURO", "Poco seguro"],
+  ["SEGURO", "Seguro"],
+  ["MENOS_SEGURO", "Menos seguro"],
 ] as const;
 
 export default function Home() {
@@ -132,6 +131,7 @@ export default function Home() {
   const [simulacroId, setSimulacroId] = useState<number | null>(null);
   const [preguntas, setPreguntas] = useState<Pregunta[]>([]);
   const [respuestas, setRespuestas] = useState<Record<number, RespuestaLocal>>({});
+  const [evaluarSeguridad, setEvaluarSeguridad] = useState(false);
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [correccion, setCorreccion] = useState<PreguntaCorregida[]>([]);
   const [mensaje, setMensaje] = useState("");
@@ -240,6 +240,7 @@ export default function Home() {
   function limpiarSimulacro() {
     setPreguntas([]);
     setRespuestas({});
+    setEvaluarSeguridad(false);
     setResultado(null);
     setCorreccion([]);
     setSimulacroId(null);
@@ -274,6 +275,9 @@ export default function Home() {
       };
     });
     setRespuestas(iniciales);
+    setEvaluarSeguridad(
+      lista.some((p) => p.seguridad_usuario !== null)
+    );
   }
 
   async function abrirSimulacro(simulacro: SimulacroListado) {
@@ -445,6 +449,19 @@ export default function Home() {
     });
   }
 
+  function cambiarEvaluacionSeguridad(activada: boolean) {
+    setEvaluarSeguridad(activada);
+    if (!activada) {
+      setRespuestas((actual) => {
+        const siguientes: Record<number, RespuestaLocal> = {};
+        for (const [id, respuesta] of Object.entries(actual)) {
+          siguientes[Number(id)] = { ...respuesta, seguridad: null };
+        }
+        return siguientes;
+      });
+    }
+  }
+
   async function crear(convocatoriaId: number) {
     if (origenes.length === 0 || fuentes.length === 0) {
       setError("Selecciona al menos un origen y una fuente.");
@@ -561,12 +578,15 @@ export default function Home() {
       return {
         simulacro_pregunta_id: p.simulacro_pregunta_id,
         respuesta: local.respuesta,
-        seguridad: local.respuesta ? local.seguridad : null,
+        seguridad:
+          evaluarSeguridad && local.respuesta ? local.seguridad : null,
       };
     });
   }
 
   function validarSeguridad(): string | null {
+    if (!evaluarSeguridad) return null;
+
     for (const p of preguntas) {
       const local = respuestas[p.simulacro_pregunta_id];
       if (local?.respuesta && !local.seguridad) {
@@ -1143,7 +1163,9 @@ export default function Home() {
             <div>
               <strong>{tipoActivo === "TEST" ? "Test" : "Simulacro"} {simulacroId}</strong>
               <div className="muted">
-                Marca respuesta y seguridad en cada pregunta contestada.
+                {evaluarSeguridad
+                  ? "Marca respuesta y seguridad en cada pregunta contestada."
+                  : "Marca la respuesta de cada pregunta."}
               </div>
             </div>
             <div className="toolbar-actions">
@@ -1178,6 +1200,17 @@ export default function Home() {
 
       {simulacroId !== null && !resultado && (
         <section className="card">
+          <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 18 }}>
+            <input
+              type="checkbox"
+              checked={evaluarSeguridad}
+              onChange={(event) =>
+                cambiarEvaluacionSeguridad(event.target.checked)
+              }
+            />
+            <span>Evaluar seguridad en las respuestas</span>
+          </label>
+
           {preguntas.map((pregunta) => {
             const local = respuestas[pregunta.simulacro_pregunta_id] ?? {
               respuesta: null,
@@ -1234,7 +1267,7 @@ export default function Home() {
                   </button>
                 </div>
 
-                {local.respuesta && (
+                {evaluarSeguridad && local.respuesta && (
                   <div className="security-box">
                     <span>Seguridad:</span>
                     {SEGURIDADES.map(([valor, etiqueta]) => (

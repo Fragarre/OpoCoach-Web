@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS public.simulacro_preguntas (
     respuesta_usuario text CHECK (respuesta_usuario IS NULL OR respuesta_usuario IN ('A','B','C','D')),
     seguridad_usuario text CHECK (
         seguridad_usuario IS NULL OR
-        seguridad_usuario IN ('MUY_SEGURO','BASTANTE_SEGURO','POCO_SEGURO')
+        seguridad_usuario IN ('SEGURO','MENOS_SEGURO')
     ),
 
     created_at timestamptz NOT NULL DEFAULT now(),
