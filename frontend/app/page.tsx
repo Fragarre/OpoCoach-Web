@@ -168,6 +168,31 @@ type RespuestaLocal = {
   seguridad: string | null;
 };
 
+type ChatModo = "CONVOCATORIA" | "GENERAL";
+
+type ChatMensaje = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+type ChatFuente = {
+  tipo: string;
+  tema?: string;
+  titulo_tema?: string;
+  norma?: string;
+  articulo?: string;
+  articulo_boe?: string;
+  clave?: string;
+  titulo?: string;
+};
+
+type ChatRespuesta = {
+  respuesta: string;
+  fuentes: ChatFuente[];
+  modelo: string | null;
+  modo: ChatModo;
+};
+
 const ORIGENES = ["A1", "A2", "C1", "C2"] as const;
 const FUENTES = ["REAL", "IA"] as const;
 
@@ -223,7 +248,7 @@ export default function Home() {
   const [convocatorias, setConvocatorias] = useState<Convocatoria[]>([]);
   const [misSimulacros, setMisSimulacros] = useState<SimulacroListado[]>([]);
   const [misTests, setMisTests] = useState<SimulacroListado[]>([]);
-  const [seccion, setSeccion] = useState<"SIMULACROS" | "TESTS">("SIMULACROS");
+  const [seccion, setSeccion] = useState<"SIMULACROS" | "TESTS" | "CHAT">("SIMULACROS");
   const [tipoActivo, setTipoActivo] = useState<"SIMULACRO" | "TEST" | null>(null);
   const [convocatoriaTestId, setConvocatoriaTestId] = useState<number | null>(null);
   const [modoTest, setModoTest] = useState<"TEMA" | "NORMA">("TEMA");
@@ -251,6 +276,12 @@ export default function Home() {
   const [accionEnCurso, setAccionEnCurso] = useState<string | null>(null);
   const [checkoutRetorno, setCheckoutRetorno] = useState<"success" | "cancel" | null>(null);
   const [estadoSuscripcion, setEstadoSuscripcion] = useState<EstadoSuscripcion | null>(null);
+  const [chatConvocatoriaId, setChatConvocatoriaId] = useState<number | null>(null);
+  const [chatModo, setChatModo] = useState<ChatModo>("CONVOCATORIA");
+  const [chatEntrada, setChatEntrada] = useState("");
+  const [chatHistoriales, setChatHistoriales] = useState<
+    Record<string, ChatMensaje[]>
+  >({});
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -278,6 +309,8 @@ export default function Home() {
         setMisSimulacros([]);
         setMisTests([]);
         setAnalisisRendimiento({});
+        setChatHistoriales({});
+        setChatEntrada("");
         limpiarSimulacro();
       }
     });
@@ -303,6 +336,9 @@ export default function Home() {
         setEstadoSuscripcion(suscripcion);
         if (convocatoriaTestId === null && lista.length > 0) {
           setConvocatoriaTestId(lista[0].id);
+        }
+        if (chatConvocatoriaId === null && lista.length > 0) {
+          setChatConvocatoriaId(lista[0].id);
         }
         setError("");
       })
@@ -703,6 +739,96 @@ export default function Home() {
     });
   }
 
+
+  function claveChat(
+    convocatoriaId: number | null = chatConvocatoriaId,
+    modo: ChatModo = chatModo
+  ): string | null {
+    if (convocatoriaId === null) return null;
+    return `${convocatoriaId}:${modo}`;
+  }
+
+  function mensajesChatActuales(): ChatMensaje[] {
+    const clave = claveChat();
+    return clave ? chatHistoriales[clave] ?? [] : [];
+  }
+
+  function limpiarChatActual() {
+    const clave = claveChat();
+    if (!clave) return;
+
+    setChatHistoriales((actual) => ({
+      ...actual,
+      [clave]: [],
+    }));
+    setChatEntrada("");
+    setError("");
+    setMensaje("");
+    setOcupado(false);
+    setAccionEnCurso(null);
+  }
+
+  async function enviarChat(event: FormEvent) {
+    event.preventDefault();
+
+    if (chatConvocatoriaId === null) {
+      setError("Selecciona una convocatoria para el chat.");
+      return;
+    }
+
+    const pregunta = chatEntrada.trim().replace(/\s+/g, " ");
+    if (!pregunta) return;
+
+    const clave = claveChat();
+    if (!clave) return;
+
+    const previos = chatHistoriales[clave] ?? [];
+    const mensajeUsuario: ChatMensaje = {
+      role: "user",
+      content: pregunta,
+    };
+
+    setChatHistoriales((actual) => ({
+      ...actual,
+      [clave]: [...(actual[clave] ?? []), mensajeUsuario],
+    }));
+    setChatEntrada("");
+    setOcupado(true);
+    setAccionEnCurso(
+      chatModo === "CONVOCATORIA"
+        ? "Consultando las fuentes disponibles..."
+        : "Generando una respuesta de conocimiento general..."
+    );
+    setError("");
+    setMensaje("");
+
+    try {
+      const resultadoChat = await apiFetch<ChatRespuesta>("api/v1/chat", {
+        method: "POST",
+        body: JSON.stringify({
+          convocatoria_id: chatConvocatoriaId,
+          pregunta,
+          mensajes_previos: previos,
+          modo: chatModo,
+        }),
+      });
+
+      const mensajeAsistente: ChatMensaje = {
+        role: "assistant",
+        content: resultadoChat.respuesta,
+      };
+
+      setChatHistoriales((actual) => ({
+        ...actual,
+        [clave]: [...(actual[clave] ?? []), mensajeAsistente],
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setOcupado(false);
+      setAccionEnCurso(null);
+    }
+  }
 
   async function actualizarSuscripcion() {
     try {
@@ -1169,6 +1295,12 @@ export default function Home() {
           >
             Tests
           </button>
+          <button
+            className={seccion === "CHAT" ? "tab active" : "tab"}
+            onClick={() => setSeccion("CHAT")}
+          >
+            Chat
+          </button>
         </nav>
       )}
 
@@ -1437,6 +1569,151 @@ export default function Home() {
                 ? "Regenerar análisis de rendimiento"
                 : "Generar análisis de rendimiento"}
           </button>
+        </section>
+      )}
+
+      {simulacroId === null && seccion === "CHAT" && (
+        <section className="card">
+          <h2>Chat</h2>
+
+          <label htmlFor="chat-convocatoria">Convocatoria</label>
+          <select
+            id="chat-convocatoria"
+            value={chatConvocatoriaId ?? ""}
+            onChange={(event) => {
+              const valor = Number(event.target.value);
+              setChatConvocatoriaId(Number.isFinite(valor) ? valor : null);
+              setChatEntrada("");
+              setError("");
+              setMensaje("");
+            }}
+          >
+            {convocatorias.map((convocatoria) => (
+              <option key={convocatoria.id} value={convocatoria.id}>
+                {convocatoria.codigo} — {convocatoria.puesto}
+              </option>
+            ))}
+          </select>
+
+          <h3>Modo de consulta</h3>
+          <div className="options">
+            <label>
+              <input
+                type="radio"
+                name="chat-modo"
+                checked={chatModo === "CONVOCATORIA"}
+                onChange={() => {
+                  setChatModo("CONVOCATORIA");
+                  setChatEntrada("");
+                  setError("");
+                  setMensaje("");
+                }}
+              />{" "}
+              Convocatoria y OpoCoach
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="chat-modo"
+                checked={chatModo === "GENERAL"}
+                onChange={() => {
+                  setChatModo("GENERAL");
+                  setChatEntrada("");
+                  setError("");
+                  setMensaje("");
+                }}
+              />{" "}
+              Conocimiento general de GPT
+            </label>
+          </div>
+
+          {chatModo === "CONVOCATORIA" ? (
+            <div className="working" style={{ marginTop: 14 }}>
+              Las respuestas se limitan al corpus de la convocatoria activa y
+              a la base de conocimiento de OpoCoach.
+            </div>
+          ) : (
+            <div className="working" style={{ marginTop: 14 }}>
+              Este modo utiliza conocimiento general de GPT. Sus respuestas
+              pueden incluir información ajena al temario y no están respaldadas
+              por el corpus de la convocatoria.
+            </div>
+          )}
+
+          <div style={{ marginTop: 18, marginBottom: 18 }}>
+            <button
+              type="button"
+              className="secondary"
+              disabled={ocupado || mensajesChatActuales().length === 0}
+              onClick={limpiarChatActual}
+            >
+              Limpiar conversación
+            </button>
+          </div>
+
+          <div style={{ display: "grid", gap: 12, marginBottom: 18 }}>
+            {mensajesChatActuales().length === 0 ? (
+              <p className="muted">La conversación está vacía.</p>
+            ) : (
+              mensajesChatActuales().map((mensajeChat, indice) => (
+                <div
+                  key={`${mensajeChat.role}-${indice}`}
+                  style={{
+                    padding: 14,
+                    border: "1px solid #d9d9d9",
+                    borderRadius: 8,
+                    background:
+                      mensajeChat.role === "user" ? "#f7f7f7" : "white",
+                  }}
+                >
+                  <strong>
+                    {mensajeChat.role === "user" ? "Tú" : "OpoCoach"}
+                  </strong>
+                  <div
+                    style={{
+                      marginTop: 8,
+                      whiteSpace: "pre-wrap",
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    {mensajeChat.content}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <form onSubmit={enviarChat}>
+            <label htmlFor="chat-pregunta">
+              {chatModo === "CONVOCATORIA"
+                ? "Escriba una duda sobre la convocatoria o sobre OpoCoach"
+                : "Escriba una pregunta de conocimiento general"}
+            </label>
+            <textarea
+              id="chat-pregunta"
+              rows={4}
+              value={chatEntrada}
+              disabled={ocupado || chatConvocatoriaId === null}
+              onChange={(event) => setChatEntrada(event.target.value)}
+            />
+            <div style={{ marginTop: 12 }}>
+              <button
+                type="submit"
+                className="primary"
+                disabled={
+                  ocupado ||
+                  chatConvocatoriaId === null ||
+                  chatEntrada.trim().length === 0
+                }
+              >
+                {ocupado && accionEnCurso?.includes("fuentes")
+                  ? "Consultando..."
+                  : ocupado && accionEnCurso?.includes("conocimiento general")
+                    ? "Generando..."
+                    : "Enviar"}
+              </button>
+            </div>
+          </form>
         </section>
       )}
 
