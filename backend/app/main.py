@@ -71,6 +71,22 @@ class ChatRequest(BaseModel):
 
 
 
+def _estado_acceso(user_id):
+    return obtener_estado_suscripcion(user_id)
+
+
+def _exigir_suscripcion_activa(user_id) -> dict:
+    estado = _estado_acceso(user_id)
+    if not estado["suscrito"]:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Esta función requiere una suscripción activa a OpoCoach."
+            ),
+        )
+    return estado
+
+
 app = FastAPI(
     title="OpoCoach API",
     version="0.9.0",
@@ -198,7 +214,7 @@ def crear_checkout_api(
 @app.post("/api/v1/chat")
 def chat_api(
     datos: ChatRequest,
-    _usuario: UsuarioAutenticado = Depends(usuario_actual),
+    usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> dict:
     """
     Chat autenticado de OpoCoach.
@@ -210,6 +226,8 @@ def chat_api(
         Usa conocimiento general del modelo y no recupera el corpus.
     """
     try:
+        _exigir_suscripcion_activa(usuario.id)
+
         if datos.convocatoria_id <= 0:
             raise ValueError("La convocatoria no es válida.")
 
@@ -249,9 +267,10 @@ def disponibilidad_simulacro(
     convocatoria_id: int,
     origen: list[str] = Query(...),
     fuente: list[str] = Query(default=["REAL", "IA"]),
-    _usuario: UsuarioAutenticado = Depends(usuario_actual),
+    usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> list[DisponibilidadParte]:
     try:
+        _exigir_suscripcion_activa(usuario.id)
         return [
             DisponibilidadParte(**x)
             for x in obtener_disponibilidad(convocatoria_id, origen, fuente)
@@ -337,6 +356,27 @@ def nuevo_test_api(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> TestCreado:
     try:
+        estado = _estado_acceso(usuario.id)
+        es_prueba_gratuita = not estado["suscrito"]
+
+        if es_prueba_gratuita:
+            if not estado["prueba_gratuita_disponible"]:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "La prueba gratuita de esta cuenta ya ha sido utilizada. "
+                        "Activa una suscripción para crear nuevos tests."
+                    ),
+                )
+            if datos.numero_preguntas > 10:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "La prueba gratuita permite un máximo de 10 preguntas. "
+                        "Activa una suscripción para crear tests más largos."
+                    ),
+                )
+
         return TestCreado(
             **crear_test(
                 convocatoria_id=datos.convocatoria_id,
@@ -346,10 +386,16 @@ def nuevo_test_api(
                 modo_seleccion=datos.modo_seleccion,
                 fuentes=datos.fuentes,
                 user_id=usuario.id,
+                es_prueba_gratuita=es_prueba_gratuita,
             )
         )
+    except HTTPException:
+        raise
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        mensaje = str(exc)
+        if "prueba gratuita" in mensaje.lower():
+            raise HTTPException(status_code=403, detail=mensaje) from exc
+        raise HTTPException(status_code=400, detail=mensaje) from exc
 
 
 @app.post(
@@ -362,12 +408,15 @@ def nuevo_simulacro(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> SimulacroCreado:
     try:
+        _exigir_suscripcion_activa(usuario.id)
         sid = crear_simulacro(
             datos.convocatoria_id,
             datos.origenes,
             datos.fuentes,
             usuario.id,
         )
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SimulacroCreado(id=sid)

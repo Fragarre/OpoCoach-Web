@@ -179,9 +179,15 @@ def crear_test(
     modo_seleccion: str,
     fuentes: list[str] | None,
     user_id: UUID,
+    es_prueba_gratuita: bool = False,
 ) -> dict:
     if numero_preguntas <= 0:
         raise ValueError("El número de preguntas debe ser mayor que cero.")
+
+    if es_prueba_gratuita and numero_preguntas > 10:
+        raise ValueError(
+            "La prueba gratuita permite un máximo de 10 preguntas."
+        )
 
     modo = str(modo_seleccion).strip().upper()
     if modo not in {"TEMA", "NORMA"}:
@@ -462,6 +468,24 @@ def crear_test(
 
     with conectar_postgres() as con:
         with con.cursor(row_factory=dict_row) as cur:
+            if es_prueba_gratuita:
+                cur.execute(
+                    """
+                    SELECT prueba_gratuita_consumida_at
+                    FROM public.profiles
+                    WHERE id = %s
+                    FOR UPDATE
+                    """,
+                    (user_id,),
+                )
+                perfil = cur.fetchone()
+                if perfil is None:
+                    raise ValueError("El usuario no tiene perfil OpoCoach.")
+                if perfil["prueba_gratuita_consumida_at"] is not None:
+                    raise ValueError(
+                        "La prueba gratuita de esta cuenta ya ha sido utilizada."
+                    )
+
             cur.execute(
                 """
                 SELECT COALESCE(MAX(numero), 0) + 1 AS siguiente
@@ -484,12 +508,12 @@ def crear_test(
                     convocatoria_numero_preguntas,
                     valoracion_test_acierto, valoracion_test_fallo,
                     valoracion_test_no_contesta, formula_nota,
-                    factor_escala_nota
+                    factor_escala_nota, es_prueba_gratuita
                 )
                 VALUES (
                     %s, %s, %s, %s, 'TEST',
                     %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s
                 )
                 RETURNING id
                 """,
@@ -503,6 +527,7 @@ def crear_test(
                     convocatoria["valoracion_test_no_contesta"],
                     convocatoria["formula_nota"],
                     convocatoria["factor_escala_nota"],
+                    bool(es_prueba_gratuita),
                 ),
             )
             test_id = int(cur.fetchone()["id"])
@@ -575,6 +600,23 @@ def crear_test(
                         Jsonb(tema),
                     ),
                 )
+
+            if es_prueba_gratuita:
+                cur.execute(
+                    """
+                    UPDATE public.profiles
+                    SET prueba_gratuita_consumida_at = now(),
+                        updated_at = now()
+                    WHERE id = %s
+                      AND prueba_gratuita_consumida_at IS NULL
+                    """,
+                    (user_id,),
+                )
+                if cur.rowcount != 1:
+                    raise RuntimeError(
+                        "No se ha podido registrar el consumo de la prueba gratuita."
+                    )
+
         con.commit()
 
     return {

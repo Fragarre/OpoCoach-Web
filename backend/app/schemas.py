@@ -54,6 +54,7 @@ class Simulacro(BaseModel):
     total_preguntas: int
     estado: str
     tipo_prueba: str
+    es_prueba_gratuita: bool = False
     convocatoria_codigo: str | None
     convocatoria_puesto: str | None
     convocatoria_numero: str | None
@@ -112,6 +113,7 @@ class SimulacroListado(BaseModel):
     total_preguntas: int
     estado: str
     tipo_prueba: str
+    es_prueba_gratuita: bool = False
     convocatoria_codigo: str | None
     contestadas: int
 
@@ -163,3 +165,6 @@ class EstadoSuscripcion(BaseModel):
     plan: str | None
     current_period_end: str | None
     cancel_at_period_end: bool
+    ended_at: str | None = None
+    prueba_gratuita_disponible: bool = True
+    prueba_gratuita_consumida_at: str | None = None

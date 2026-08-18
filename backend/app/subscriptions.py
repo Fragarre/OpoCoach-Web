@@ -49,6 +49,17 @@ def _timestamp_fin_periodo(suscripcion) -> datetime | None:
     return datetime.fromtimestamp(int(valor), tz=timezone.utc)
 
 
+def _timestamp_ended_at(suscripcion) -> datetime | None:
+    valor = getattr(suscripcion, "ended_at", None)
+    if valor is None and hasattr(suscripcion, "get"):
+        valor = suscripcion.get("ended_at")
+
+    if valor is None:
+        return None
+
+    return datetime.fromtimestamp(int(valor), tz=timezone.utc)
+
+
 def _user_id_desde_metadata(objeto) -> UUID | None:
     metadata = getattr(objeto, "metadata", None) or {}
     valor = metadata.get("opocoach_user_id")
@@ -87,6 +98,9 @@ def _guardar_suscripcion(
         getattr(suscripcion, "cancel_at_period_end", False)
     )
     current_period_end = _timestamp_fin_periodo(suscripcion)
+    ended_at = _timestamp_ended_at(suscripcion)
+    if status == "canceled" and ended_at is None:
+        ended_at = datetime.now(timezone.utc)
 
     plan = None
     items = suscripcion.get("items") if hasattr(suscripcion, "get") else None
@@ -113,9 +127,10 @@ def _guardar_suscripcion(
                     status,
                     current_period_end,
                     cancel_at_period_end,
+                    ended_at,
                     updated_at
                 )
-                VALUES (%s, 'STRIPE', %s, %s, %s, %s, %s, %s, now())
+                VALUES (%s, 'STRIPE', %s, %s, %s, %s, %s, %s, %s, now())
                 ON CONFLICT (subscription_id)
                 DO UPDATE SET
                     user_id = EXCLUDED.user_id,
@@ -124,6 +139,10 @@ def _guardar_suscripcion(
                     status = EXCLUDED.status,
                     current_period_end = EXCLUDED.current_period_end,
                     cancel_at_period_end = EXCLUDED.cancel_at_period_end,
+                    ended_at = COALESCE(
+                        EXCLUDED.ended_at,
+                        public.subscriptions.ended_at
+                    ),
                     updated_at = now()
                 """,
                 (
@@ -134,6 +153,7 @@ def _guardar_suscripcion(
                     status,
                     current_period_end,
                     cancel_at_period_end,
+                    ended_at,
                 ),
             )
         con.commit()
@@ -209,13 +229,25 @@ def obtener_estado_suscripcion(user_id: UUID) -> dict:
         with con.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
+                SELECT prueba_gratuita_consumida_at
+                FROM public.profiles
+                WHERE id = %s
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            perfil = cur.fetchone()
+
+            cur.execute(
+                """
                 SELECT
                     customer_id,
                     subscription_id,
                     plan,
                     status,
                     current_period_end,
-                    cancel_at_period_end
+                    cancel_at_period_end,
+                    ended_at
                 FROM public.subscriptions
                 WHERE user_id = %s
                   AND proveedor = 'STRIPE'
@@ -226,8 +258,14 @@ def obtener_estado_suscripcion(user_id: UUID) -> dict:
             )
             fila = cur.fetchone()
 
+    consumida_at = (
+        perfil["prueba_gratuita_consumida_at"]
+        if perfil is not None
+        else None
+    )
+
     if fila is None:
-        return {
+        resultado = {
             "suscrito": False,
             "status": "SIN_SUSCRIPCION",
             "customer_id": None,
@@ -235,14 +273,23 @@ def obtener_estado_suscripcion(user_id: UUID) -> dict:
             "plan": None,
             "current_period_end": None,
             "cancel_at_period_end": False,
+            "ended_at": None,
         }
+    else:
+        resultado = dict(fila)
+        resultado["suscrito"] = resultado["status"] in ESTADOS_CON_ACCESO
 
-    resultado = dict(fila)
-    resultado["suscrito"] = resultado["status"] in ESTADOS_CON_ACCESO
+    for campo in (
+        "current_period_end",
+        "ended_at",
+    ):
+        if resultado.get(campo) is not None:
+            resultado[campo] = resultado[campo].isoformat()
 
-    if resultado["current_period_end"] is not None:
-        resultado["current_period_end"] = (
-            resultado["current_period_end"].isoformat()
-        )
+    resultado["prueba_gratuita_consumida_at"] = (
+        consumida_at.isoformat() if consumida_at is not None else None
+    )
+    resultado["prueba_gratuita_disponible"] = consumida_at is None
 
     return resultado
+

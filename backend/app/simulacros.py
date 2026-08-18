@@ -698,6 +698,7 @@ def crear_simulacro(
                     numero,
                     total_preguntas,
                     tipo_prueba,
+                    es_prueba_gratuita,
                     convocatoria_codigo,
                     convocatoria_puesto,
                     convocatoria_numero,
@@ -1261,6 +1262,7 @@ def listar_simulacros(
                     s.total_preguntas,
                     s.estado,
                     s.tipo_prueba,
+                    s.es_prueba_gratuita,
                     s.convocatoria_codigo,
                     COUNT(sp.id) FILTER (
                         WHERE sp.respuesta_usuario IS NOT NULL
