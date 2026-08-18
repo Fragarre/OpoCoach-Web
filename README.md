@@ -17,6 +17,8 @@ Los endpoints de simulacros ya no utilizan `DEV_USER_EMAIL`. Exigen un
 
 En `backend/.env`:
 
+Arranque:  uvicorn app.main:app --reload --env-file .env
+
 ```env
 DATABASE_URL=postgresql://...
 SUPABASE_URL=https://TU_PROJECT_REF.supabase.co

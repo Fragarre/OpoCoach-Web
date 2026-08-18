@@ -14,6 +14,15 @@ type EstadoSuscripcion = {
   plan: string | null;
   current_period_end: string | null;
   cancel_at_period_end: boolean;
+  cancel_at: string | null;
+  cancelacion_programada: boolean;
+  ended_at: string | null;
+  prueba_gratuita_disponible: boolean;
+  prueba_gratuita_consumida_at: string | null;
+  historico_post_baja_dias: number;
+  acceso_historico_hasta: string | null;
+  acceso_historico_activo: boolean;
+  pago_pendiente: boolean;
 };
 
 type Me = {
@@ -136,6 +145,7 @@ type SimulacroListado = {
   total_preguntas: number;
   estado: "GENERADO" | "FINALIZADO";
   tipo_prueba: "SIMULACRO" | "TEST";
+  es_prueba_gratuita: boolean;
   convocatoria_codigo: string | null;
   contestadas: number;
 };
@@ -201,6 +211,20 @@ const SEGURIDADES = [
   ["MENOS_SEGURO", "Menos seguro"],
 ] as const;
 
+function formatearFechaSuscripcion(valor: string | null): string | null {
+  if (!valor) return null;
+
+  const fecha = new Date(valor);
+  if (Number.isNaN(fecha.getTime())) return null;
+
+  return new Intl.DateTimeFormat("es-ES", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(fecha);
+}
+
+
 function formatearTiempo(segundos: number): string {
   const total = Math.max(0, Math.floor(segundos));
   const horas = Math.floor(total / 3600);
@@ -258,6 +282,7 @@ export default function Home() {
   const [temasSeleccionados, setTemasSeleccionados] = useState<number[]>([]);
   const [normasSeleccionadas, setNormasSeleccionadas] = useState<string[]>([]);
   const [simulacroId, setSimulacroId] = useState<number | null>(null);
+  const [pruebaActivaEsGratuita, setPruebaActivaEsGratuita] = useState(false);
   const [preguntas, setPreguntas] = useState<Pregunta[]>([]);
   const [respuestas, setRespuestas] = useState<Record<number, RespuestaLocal>>({});
   const [evaluarSeguridad, setEvaluarSeguridad] = useState(false);
@@ -282,6 +307,20 @@ export default function Home() {
   const [chatHistoriales, setChatHistoriales] = useState<
     Record<string, ChatMensaje[]>
   >({});
+
+  const modoHistoricoPostBaja = Boolean(
+    estadoSuscripcion &&
+      !estadoSuscripcion.suscrito &&
+      estadoSuscripcion.acceso_historico_activo
+  );
+
+  const modoSoloLecturaActivo = Boolean(
+    modoHistoricoPostBaja && !pruebaActivaEsGratuita
+  );
+
+  function itemSoloLectura(item: SimulacroListado): boolean {
+    return Boolean(modoHistoricoPostBaja && !item.es_prueba_gratuita);
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -394,6 +433,7 @@ export default function Home() {
     setResultadoAcumulado(null);
     setSimulacroId(null);
     setTipoActivo(null);
+    setPruebaActivaEsGratuita(false);
     setMostrarCronometro(false);
     setTiempoPrevioCorreccion(0);
     setInicioCorreccionMs(null);
@@ -450,6 +490,7 @@ export default function Home() {
     setMensaje("");
     limpiarSimulacro();
     setTipoActivo(simulacro.tipo_prueba);
+    setPruebaActivaEsGratuita(Boolean(simulacro.es_prueba_gratuita));
 
     try {
       if (simulacro.estado === "FINALIZADO") {
@@ -483,7 +524,13 @@ export default function Home() {
         setSimulacroId(simulacro.id);
         setPreguntas(lista);
         inicializarRespuestas(lista);
-        iniciarTiempoCorreccion(tiempo.tiempo_correccion_segundos);
+        if (itemSoloLectura(simulacro)) {
+          setTiempoPrevioCorreccion(tiempo.tiempo_correccion_segundos);
+          setInicioCorreccionMs(null);
+          setMostrarCronometro(false);
+        } else {
+          iniciarTiempoCorreccion(tiempo.tiempo_correccion_segundos);
+        }
       }
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
@@ -496,6 +543,12 @@ export default function Home() {
 
   async function modificarRespuestas() {
     if (simulacroId === null) return;
+    if (modoSoloLecturaActivo) {
+      setError(
+        "Tras la baja, el histórico está disponible únicamente en modo lectura y para descarga de PDFs."
+      );
+      return;
+    }
 
     setOcupado(true);
     setAccionEnCurso("Preparando modificación de respuestas...");
@@ -860,6 +913,25 @@ export default function Home() {
     }
   }
 
+  async function abrirPortalSuscripcion() {
+    setError("");
+    setMensaje("");
+    setOcupado(true);
+    setAccionEnCurso("Abriendo gestión de suscripción...");
+
+    try {
+      const portal = await apiFetch<{ url: string }>(
+        "api/v1/billing/portal",
+        { method: "POST" }
+      );
+      window.location.assign(portal.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setOcupado(false);
+      setAccionEnCurso(null);
+    }
+  }
+
   async function iniciarSesion(event: FormEvent) {
     event.preventDefault();
     setError("");
@@ -960,6 +1032,7 @@ export default function Home() {
       );
 
       setTipoActivo("SIMULACRO");
+      setPruebaActivaEsGratuita(false);
       setSimulacroId(creado.id);
       setPreguntas(lista);
       inicializarRespuestas(lista);
@@ -1018,11 +1091,13 @@ export default function Home() {
         `api/v1/simulacros/${creado.id}/preguntas`
       );
 
+      setPruebaActivaEsGratuita(!estadoSuscripcion?.suscrito);
       setSimulacroId(creado.id);
       setPreguntas(lista);
       inicializarRespuestas(lista);
       iniciarTiempoCorreccion(0);
       await recargarTests();
+      await actualizarSuscripcion();
 
       const aviso =
         creado.avisos.length > 0 ? ` ${creado.avisos.join(" ")}` : "";
@@ -1236,11 +1311,27 @@ export default function Home() {
                 <p>
                   Estado verificado:{" "}
                   <strong>
-                    {estadoSuscripcion.suscrito
-                      ? "Suscripción activa"
-                      : estadoSuscripcion.status}
+                    {estadoSuscripcion.pago_pendiente
+                      ? "Pago pendiente"
+                      : estadoSuscripcion.suscrito
+                        ? estadoSuscripcion.cancelacion_programada
+                          ? `Suscripción activa hasta ${
+                              formatearFechaSuscripcion(
+                                estadoSuscripcion.cancel_at ??
+                                  estadoSuscripcion.current_period_end
+                              ) ?? "la fecha de cancelación"
+                            }`
+                          : "Suscripción activa"
+                        : estadoSuscripcion.status}
                   </strong>
                 </p>
+              )}
+              {estadoSuscripcion?.pago_pendiente && (
+                <div className="working inline-feedback">
+                  No hemos podido renovar tu suscripción. Tu acceso continúa
+                  temporalmente. Revisa tu método de pago desde Gestionar
+                  suscripción.
+                </div>
               )}
               {checkoutRetorno === "success" && (
                 <div className="success inline-feedback">
@@ -1265,14 +1356,32 @@ export default function Home() {
               )}
             </div>
             {estadoSuscripcion?.suscrito ? (
-              <span className="status status-finished">Activa</span>
+              <div className="actions">
+                <span className="status status-finished">
+                  {estadoSuscripcion.pago_pendiente
+                    ? "Pago pendiente"
+                    : estadoSuscripcion.cancelacion_programada
+                      ? "Activa · baja programada"
+                      : "Activa"}
+                </span>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={ocupado}
+                  onClick={abrirPortalSuscripcion}
+                >
+                  {accionEnCurso === "Abriendo gestión de suscripción..."
+                    ? "Abriendo..."
+                    : "Gestionar suscripción"}
+                </button>
+              </div>
             ) : (
               <button
                 className="primary"
                 disabled={ocupado}
                 onClick={abrirCheckout}
               >
-                {accionEnCurso?.includes("Stripe")
+                {accionEnCurso === "Abriendo pago seguro de Stripe..."
                   ? "Abriendo Stripe..."
                   : "Probar suscripción"}
               </button>
@@ -1375,16 +1484,23 @@ export default function Home() {
       {resultado && (
         <section className="card">
           <h2>Resultado</h2>
-          <button
-            className="secondary"
-            disabled={ocupado}
-            onClick={modificarRespuestas}
-            style={{ marginBottom: 16 }}
-          >
-            {ocupado && accionEnCurso === "Preparando modificación de respuestas..."
-              ? "Preparando..."
-              : "Modificar respuestas"}
-          </button>
+          {!modoSoloLecturaActivo && (
+            <button
+              className="secondary"
+              disabled={ocupado}
+              onClick={modificarRespuestas}
+              style={{ marginBottom: 16 }}
+            >
+              {ocupado && accionEnCurso === "Preparando modificación de respuestas..."
+                ? "Preparando..."
+                : "Modificar respuestas"}
+            </button>
+          )}
+          {modoSoloLecturaActivo && (
+            <p className="muted">
+              Histórico en modo solo lectura. Puedes consultar la prueba y descargar sus PDFs.
+            </p>
+          )}
           <div className="result-grid">
             <div><strong>{resultado.nota.toFixed(2)}</strong><span>Nota</span></div>
             <div><strong>{resultado.aciertos}</strong><span>Aciertos</span></div>
@@ -1536,7 +1652,10 @@ export default function Home() {
         </section>
       )}
 
-      {resultado && resultadoAcumulado && resultadoAcumulado.simulacros > 0 && (
+      {resultado &&
+        resultadoAcumulado &&
+        resultadoAcumulado.simulacros > 0 &&
+        !modoSoloLecturaActivo && (
         <section className="card">
           <h2>Análisis acumulado de la convocatoria</h2>
           <p className="muted">
@@ -1576,6 +1695,14 @@ export default function Home() {
         <section className="card">
           <h2>Chat</h2>
 
+          {modoHistoricoPostBaja && (
+            <div className="working" style={{ marginBottom: 18 }}>
+              El Chat no está disponible durante el acceso histórico posterior a la baja.
+            </div>
+          )}
+
+          {!modoHistoricoPostBaja && (
+            <>
           <label htmlFor="chat-convocatoria">Convocatoria</label>
           <select
             id="chat-convocatoria"
@@ -1714,6 +1841,8 @@ export default function Home() {
               </button>
             </div>
           </form>
+            </>
+          )}
         </section>
       )}
 
@@ -1758,15 +1887,19 @@ export default function Home() {
                     >
                       {simulacro.estado === "FINALIZADO"
                         ? "Ver corrección"
-                        : "Continuar"}
+                        : itemSoloLectura(simulacro)
+                          ? "Ver preguntas"
+                          : "Continuar"}
                     </button>
-                    <button
-                      className="danger"
-                      disabled={ocupado}
-                      onClick={() => eliminarGuardado(simulacro)}
-                    >
-                      Eliminar
-                    </button>
+                    {!itemSoloLectura(simulacro) && (
+                      <button
+                        className="danger"
+                        disabled={ocupado}
+                        onClick={() => eliminarGuardado(simulacro)}
+                      >
+                        Eliminar
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1775,7 +1908,9 @@ export default function Home() {
         </section>
       )}
 
-      {simulacroId === null && seccion === "SIMULACROS" && (
+      {simulacroId === null &&
+        seccion === "SIMULACROS" &&
+        !modoHistoricoPostBaja && (
         <section className="card">
           <h2>Crear simulacro</h2>
 
@@ -1799,7 +1934,7 @@ export default function Home() {
         </section>
       )}
 
-      {simulacroId === null && seccion === "TESTS" && (
+      {simulacroId === null && seccion === "TESTS" && !modoHistoricoPostBaja && (
         <>
           <section className="card">
             <h2>Mis tests</h2>
@@ -1837,15 +1972,19 @@ export default function Home() {
                       >
                         {test.estado === "FINALIZADO"
                           ? "Ver corrección"
-                          : "Continuar"}
+                          : itemSoloLectura(test)
+                            ? "Ver preguntas"
+                            : "Continuar"}
                       </button>
-                      <button
-                        className="danger"
-                        disabled={ocupado}
-                        onClick={() => eliminarGuardado(test)}
-                      >
-                        Eliminar
-                      </button>
+                      {!itemSoloLectura(test) && (
+                        <button
+                          className="danger"
+                          disabled={ocupado}
+                          onClick={() => eliminarGuardado(test)}
+                        >
+                          Eliminar
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1988,16 +2127,20 @@ export default function Home() {
               >
                 {tipoActivo === "TEST" ? "Volver a mis tests" : "Volver a mis simulacros"}
               </button>
-              <button className="secondary" disabled={ocupado} onClick={guardar}>
-                {ocupado && accionEnCurso?.startsWith("Guardando respuestas")
-                  ? "Guardando..."
-                  : "Guardar respuestas"}
-              </button>
-              <button className="primary calificar-button" disabled={ocupado} onClick={calificar}>
-                {ocupado && accionEnCurso?.includes("calificando")
-                  ? "Calificando..."
-                  : `Calificar ${tipoActivo === "TEST" ? "test" : "simulacro"}`}
-              </button>
+              {!modoSoloLecturaActivo && (
+                <>
+                  <button className="secondary" disabled={ocupado} onClick={guardar}>
+                    {ocupado && accionEnCurso?.startsWith("Guardando respuestas")
+                      ? "Guardando..."
+                      : "Guardar respuestas"}
+                  </button>
+                  <button className="primary calificar-button" disabled={ocupado} onClick={calificar}>
+                    {ocupado && accionEnCurso?.includes("calificando")
+                      ? "Calificando..."
+                      : `Calificar ${tipoActivo === "TEST" ? "test" : "simulacro"}`}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </section>
@@ -2005,35 +2148,43 @@ export default function Home() {
 
       {simulacroId !== null && !resultado && (
         <section className="card">
-          <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-            <input
-              type="checkbox"
-              checked={mostrarCronometro}
-              onChange={(event) => setMostrarCronometro(event.target.checked)}
-            />
-            <span>Mostrar cronómetro</span>
-          </label>
-          <p className="muted" style={{ marginTop: 0 }}>
-            El tiempo se registra igualmente aunque el cronómetro permanezca oculto.
-          </p>
+          {modoSoloLecturaActivo ? (
+            <div className="working" style={{ marginBottom: 18 }}>
+              Histórico en modo solo lectura. Las respuestas no pueden modificarse.
+            </div>
+          ) : (
+            <>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+                <input
+                  type="checkbox"
+                  checked={mostrarCronometro}
+                  onChange={(event) => setMostrarCronometro(event.target.checked)}
+                />
+                <span>Mostrar cronómetro</span>
+              </label>
+              <p className="muted" style={{ marginTop: 0 }}>
+                El tiempo se registra igualmente aunque el cronómetro permanezca oculto.
+              </p>
 
-          {mostrarCronometro && inicioCorreccionMs !== null && (
-            <CronometroCorreccion
-              inicioMs={inicioCorreccionMs}
-              tiempoPrevio={tiempoPrevioCorreccion}
-            />
+              {mostrarCronometro && inicioCorreccionMs !== null && (
+                <CronometroCorreccion
+                  inicioMs={inicioCorreccionMs}
+                  tiempoPrevio={tiempoPrevioCorreccion}
+                />
+              )}
+
+              <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 18 }}>
+                <input
+                  type="checkbox"
+                  checked={evaluarSeguridad}
+                  onChange={(event) =>
+                    cambiarEvaluacionSeguridad(event.target.checked)
+                  }
+                />
+                <span>Evaluar seguridad en las respuestas</span>
+              </label>
+            </>
           )}
-
-          <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 18 }}>
-            <input
-              type="checkbox"
-              checked={evaluarSeguridad}
-              onChange={(event) =>
-                cambiarEvaluacionSeguridad(event.target.checked)
-              }
-            />
-            <span>Evaluar seguridad en las respuestas</span>
-          </label>
 
           {preguntas.map((pregunta) => {
             const local = respuestas[pregunta.simulacro_pregunta_id] ?? {
@@ -2065,6 +2216,7 @@ export default function Home() {
                         type="radio"
                         name={`respuesta-${pregunta.simulacro_pregunta_id}`}
                         checked={local.respuesta === letra}
+                        disabled={modoSoloLecturaActivo}
                         onChange={() =>
                           establecerRespuesta(
                             pregunta.simulacro_pregunta_id,
@@ -2080,6 +2232,7 @@ export default function Home() {
                   <button
                     type="button"
                     className="link-button"
+                    disabled={modoSoloLecturaActivo}
                     onClick={() =>
                       establecerRespuesta(
                         pregunta.simulacro_pregunta_id,
@@ -2100,6 +2253,7 @@ export default function Home() {
                           type="radio"
                           name={`seguridad-${pregunta.simulacro_pregunta_id}`}
                           checked={local.seguridad === valor}
+                          disabled={modoSoloLecturaActivo}
                           onChange={() =>
                             establecerSeguridad(
                               pregunta.simulacro_pregunta_id,
@@ -2116,18 +2270,20 @@ export default function Home() {
             );
           })}
 
-          <div className="row final-actions">
-            <button className="secondary" disabled={ocupado} onClick={guardar}>
-              {ocupado && accionEnCurso?.startsWith("Guardando respuestas")
-                ? "Guardando..."
-                : "Guardar respuestas"}
-            </button>
-            <button className="primary calificar-button" disabled={ocupado} onClick={calificar}>
-              {ocupado && accionEnCurso?.includes("calificando")
-                ? "Calificando..."
-                : `Calificar ${tipoActivo === "TEST" ? "test" : "simulacro"}`}
-            </button>
-          </div>
+          {!modoSoloLecturaActivo && (
+            <div className="row final-actions">
+              <button className="secondary" disabled={ocupado} onClick={guardar}>
+                {ocupado && accionEnCurso?.startsWith("Guardando respuestas")
+                  ? "Guardando..."
+                  : "Guardar respuestas"}
+              </button>
+              <button className="primary calificar-button" disabled={ocupado} onClick={calificar}>
+                {ocupado && accionEnCurso?.includes("calificando")
+                  ? "Calificando..."
+                  : `Calificar ${tipoActivo === "TEST" ? "test" : "simulacro"}`}
+              </button>
+            </div>
+          )}
         </section>
       )}
 

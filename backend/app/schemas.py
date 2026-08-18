@@ -156,6 +156,10 @@ class CheckoutSessionResponse(BaseModel):
     url: str
 
 
+class PortalSessionResponse(BaseModel):
+    url: str
+
+
 
 class EstadoSuscripcion(BaseModel):
     suscrito: bool
@@ -165,6 +169,12 @@ class EstadoSuscripcion(BaseModel):
     plan: str | None
     current_period_end: str | None
     cancel_at_period_end: bool
+    cancel_at: str | None = None
+    cancelacion_programada: bool = False
     ended_at: str | None = None
     prueba_gratuita_disponible: bool = True
     prueba_gratuita_consumida_at: str | None = None
+    historico_post_baja_dias: int = 0
+    acceso_historico_hasta: str | None = None
+    acceso_historico_activo: bool = False
+    pago_pendiente: bool = False

@@ -858,6 +858,7 @@ def obtener_simulacro(simulacro_id: int, user_id: UUID) -> dict | None:
                     total_preguntas,
                     estado,
                     tipo_prueba,
+                    es_prueba_gratuita,
                     convocatoria_codigo,
                     convocatoria_puesto,
                     convocatoria_numero,
@@ -1469,6 +1470,7 @@ def obtener_resultado_para_analisis(
 def obtener_resultado_acumulado(
     simulacro_id: int,
     user_id: UUID,
+    solo_prueba_gratuita: bool = False,
 ) -> dict:
     """
     Calcula el rendimiento acumulado de las pruebas del mismo tipo y
@@ -1487,7 +1489,7 @@ def obtener_resultado_acumulado(
         with con.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
-                SELECT convocatoria_id, tipo_prueba
+                SELECT convocatoria_id, tipo_prueba, es_prueba_gratuita
                 FROM public.simulacros
                 WHERE id = %s
                   AND user_id = %s
@@ -1505,8 +1507,19 @@ def obtener_resultado_acumulado(
 
             convocatoria_id = int(referencia["convocatoria_id"])
 
+            if solo_prueba_gratuita and not bool(referencia["es_prueba_gratuita"]):
+                raise ValueError(
+                    "El histórico de suscripción ya no está disponible."
+                )
+
+            filtro_gratuita = (
+                "AND s.es_prueba_gratuita = true"
+                if solo_prueba_gratuita
+                else ""
+            )
+
             cur.execute(
-                """
+                f"""
                 SELECT
                     s.id,
                     s.numero,
@@ -1518,6 +1531,7 @@ def obtener_resultado_acumulado(
                 WHERE s.user_id = %s
                   AND s.convocatoria_id = %s
                   AND s.tipo_prueba = %s
+                  {filtro_gratuita}
                   AND EXISTS (
                         SELECT 1
                         FROM public.simulacro_preguntas sp

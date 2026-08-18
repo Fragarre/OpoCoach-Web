@@ -8,8 +8,12 @@ from app.chat_convocatoria import responder_chat
 from app.pdf_examen import generar_pdf_preguntas
 from app.pdf_soluciones import generar_pdf_soluciones
 from app.auth import UsuarioAutenticado, usuario_actual
-from app.billing import crear_checkout_suscripcion
-from app.subscriptions import procesar_webhook, obtener_estado_suscripcion
+from app.billing import crear_checkout_suscripcion, crear_portal_cliente
+from app.subscriptions import (
+    procesar_webhook,
+    obtener_estado_suscripcion,
+    obtener_customer_id_stripe,
+)
 from app.postgres import comprobar_postgres
 from app.repositorio_contenidos import (
     comprobar_base,
@@ -35,6 +39,7 @@ from app.schemas import (
     CrearTestRequest,
     TestCreado,
     CheckoutSessionResponse,
+    PortalSessionResponse,
     EstadoSuscripcion,
 )
 from app.tests_opocoach import (
@@ -85,6 +90,56 @@ def _exigir_suscripcion_activa(user_id) -> dict:
             ),
         )
     return estado
+
+
+def _obtener_prueba_accesible(simulacro_id: int, user_id):
+    prueba = obtener_simulacro(simulacro_id, user_id)
+    if prueba is None:
+        raise HTTPException(status_code=404, detail="Simulacro no encontrado")
+    return prueba
+
+
+def _exigir_lectura_prueba(simulacro_id: int, user_id) -> tuple[dict, dict]:
+    prueba = _obtener_prueba_accesible(simulacro_id, user_id)
+    estado = _estado_acceso(user_id)
+
+    if (
+        bool(prueba.get("es_prueba_gratuita"))
+        or estado["suscrito"]
+        or estado.get("acceso_historico_activo", False)
+    ):
+        return prueba, estado
+
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "El plazo de acceso al histórico de esta suscripción ha finalizado."
+        ),
+    )
+
+
+def _exigir_escritura_prueba(simulacro_id: int, user_id) -> tuple[dict, dict]:
+    prueba = _obtener_prueba_accesible(simulacro_id, user_id)
+    estado = _estado_acceso(user_id)
+
+    if bool(prueba.get("es_prueba_gratuita")) or estado["suscrito"]:
+        return prueba, estado
+
+    if estado.get("acceso_historico_activo", False):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Tras la baja, el histórico está disponible únicamente en modo "
+                "lectura y para descarga de PDFs."
+            ),
+        )
+
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "El plazo de acceso al histórico de esta suscripción ha finalizado."
+        ),
+    )
 
 
 app = FastAPI(
@@ -193,14 +248,27 @@ def crear_checkout_api(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> CheckoutSessionResponse:
     try:
+        estado = obtener_estado_suscripcion(usuario.id)
+        if estado["suscrito"]:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Ya existe una suscripción activa para esta cuenta. "
+                    "Utiliza Gestionar suscripción."
+                ),
+            )
+
         checkout = crear_checkout_suscripcion(
             user_id=usuario.id,
             email=usuario.email,
+            customer_id=obtener_customer_id_stripe(usuario.id),
         )
         return CheckoutSessionResponse(
             id=checkout.id,
             url=checkout.url,
         )
+    except HTTPException:
+        raise
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except stripe.StripeError as exc:
@@ -208,6 +276,36 @@ def crear_checkout_api(
         raise HTTPException(
             status_code=502,
             detail=f"Stripe no ha podido crear el Checkout: {mensaje}",
+        ) from exc
+
+
+@app.post(
+    "/api/v1/billing/portal",
+    response_model=PortalSessionResponse,
+    status_code=201,
+)
+def crear_portal_api(
+    usuario: UsuarioAutenticado = Depends(usuario_actual),
+) -> PortalSessionResponse:
+    try:
+        customer_id = obtener_customer_id_stripe(usuario.id)
+        if not customer_id:
+            raise HTTPException(
+                status_code=404,
+                detail="Esta cuenta todavía no tiene un cliente Stripe asociado.",
+            )
+
+        portal = crear_portal_cliente(customer_id)
+        return PortalSessionResponse(url=portal.url)
+    except HTTPException:
+        raise
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except stripe.StripeError as exc:
+        mensaje = getattr(exc, "user_message", None) or str(exc)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Stripe no ha podido abrir el portal: {mensaje}",
         ) from exc
 
 
@@ -286,14 +384,21 @@ def mis_simulacros_api(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> list[SimulacroListado]:
     try:
-        return [
-            SimulacroListado(**fila)
-            for fila in listar_simulacros(
-                usuario.id,
-                convocatoria_id=convocatoria_id,
-                tipo_prueba="SIMULACRO",
-            )
-        ]
+        estado = _estado_acceso(usuario.id)
+        filas = listar_simulacros(
+            usuario.id,
+            convocatoria_id=convocatoria_id,
+            tipo_prueba="SIMULACRO",
+        )
+        if not (
+            estado["suscrito"]
+            or estado.get("acceso_historico_activo", False)
+        ):
+            filas = [
+                fila for fila in filas
+                if bool(fila.get("es_prueba_gratuita"))
+            ]
+        return [SimulacroListado(**fila) for fila in filas]
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -340,14 +445,21 @@ def mis_tests_api(
     convocatoria_id: int | None = None,
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> list[SimulacroListado]:
-    return [
-        SimulacroListado(**fila)
-        for fila in listar_simulacros(
-            usuario.id,
-            convocatoria_id=convocatoria_id,
-            tipo_prueba="TEST",
-        )
-    ]
+    estado = _estado_acceso(usuario.id)
+    filas = listar_simulacros(
+        usuario.id,
+        convocatoria_id=convocatoria_id,
+        tipo_prueba="TEST",
+    )
+    if not (
+        estado["suscrito"]
+        or estado.get("acceso_historico_activo", False)
+    ):
+        filas = [
+            fila for fila in filas
+            if bool(fila.get("es_prueba_gratuita"))
+        ]
+    return [SimulacroListado(**fila) for fila in filas]
 
 
 @app.post("/api/v1/tests", response_model=TestCreado, status_code=201)
@@ -427,9 +539,7 @@ def ver_simulacro(
     simulacro_id: int,
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> Simulacro:
-    fila = obtener_simulacro(simulacro_id, usuario.id)
-    if fila is None:
-        raise HTTPException(status_code=404, detail="Simulacro no encontrado")
+    fila, _estado = _exigir_lectura_prueba(simulacro_id, usuario.id)
     return Simulacro(**fila)
 
 
@@ -441,8 +551,7 @@ def preguntas_simulacro(
     simulacro_id: int,
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> list[PreguntaSimulacro]:
-    if obtener_simulacro(simulacro_id, usuario.id) is None:
-        raise HTTPException(status_code=404, detail="Simulacro no encontrado")
+    _exigir_lectura_prueba(simulacro_id, usuario.id)
     return [
         PreguntaSimulacro(**x)
         for x in obtener_preguntas_para_realizar(simulacro_id, usuario.id)
@@ -459,6 +568,7 @@ def guardar_respuestas_simulacro(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> None:
     try:
+        _exigir_escritura_prueba(simulacro_id, usuario.id)
         guardar_respuestas(
             simulacro_id,
             [x.model_dump() for x in datos.respuestas],
@@ -476,6 +586,7 @@ def tiempo_correccion_api(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> dict[str, int]:
     try:
+        _exigir_lectura_prueba(simulacro_id, usuario.id)
         return {
             "tiempo_correccion_segundos": obtener_tiempo_correccion(
                 simulacro_id,
@@ -498,6 +609,7 @@ def finalizar_simulacro_api(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> ResultadoSimulacro:
     try:
+        _exigir_escritura_prueba(simulacro_id, usuario.id)
         return ResultadoSimulacro(
             **finalizar_simulacro(
                 simulacro_id,
@@ -521,6 +633,7 @@ def resultado_simulacro_guardado_api(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> ResultadoSimulacro:
     try:
+        _exigir_lectura_prueba(simulacro_id, usuario.id)
         return ResultadoSimulacro(
             **obtener_resultado_guardado(simulacro_id, usuario.id)
         )
@@ -538,7 +651,17 @@ def resultado_acumulado_api(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> dict:
     try:
-        return obtener_resultado_acumulado(simulacro_id, usuario.id)
+        prueba, estado = _exigir_lectura_prueba(simulacro_id, usuario.id)
+        solo_gratuita = bool(
+            prueba.get("es_prueba_gratuita")
+            and not estado["suscrito"]
+            and not estado.get("acceso_historico_activo", False)
+        )
+        return obtener_resultado_acumulado(
+            simulacro_id,
+            usuario.id,
+            solo_prueba_gratuita=solo_gratuita,
+        )
     except ValueError as exc:
         mensaje = str(exc)
         codigo = 404 if "no existe" in mensaje.lower() else 400
@@ -559,6 +682,7 @@ def pdf_soluciones_api(
     Está disponible tanto para pruebas abiertas como finalizadas.
     """
     try:
+        _exigir_lectura_prueba(simulacro_id, usuario.id)
         nombre, contenido = generar_pdf_soluciones(
             simulacro_id=simulacro_id,
             user_id=usuario.id,
@@ -584,6 +708,7 @@ def pdf_preguntas_api(
     El PDF no se persiste en el servidor.
     """
     try:
+        _exigir_lectura_prueba(simulacro_id, usuario.id)
         nombre, contenido = generar_pdf_preguntas(
             simulacro_id=simulacro_id,
             user_id=usuario.id,
@@ -609,6 +734,7 @@ def analisis_rendimiento_api(
     y del acumulado del mismo tipo en su convocatoria.
     """
     try:
+        prueba, estado = _exigir_escritura_prueba(simulacro_id, usuario.id)
         resultado_actual = obtener_resultado_para_analisis(
             simulacro_id,
             usuario.id,
@@ -616,6 +742,10 @@ def analisis_rendimiento_api(
         resultado_acumulado = obtener_resultado_acumulado(
             simulacro_id,
             usuario.id,
+            solo_prueba_gratuita=bool(
+                prueba.get("es_prueba_gratuita")
+                and not estado["suscrito"]
+            ),
         )
         texto = generar_analisis_rendimiento(
             resultado_actual=resultado_actual,
@@ -638,6 +768,7 @@ def eliminar_simulacro_api(
     simulacro_id: int,
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> None:
+    _exigir_escritura_prueba(simulacro_id, usuario.id)
     if not eliminar_simulacro(simulacro_id, usuario.id):
         raise HTTPException(status_code=404, detail="Simulacro no encontrado")
 
@@ -651,6 +782,7 @@ def correccion_simulacro(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> list[PreguntaCorregida]:
     try:
+        _exigir_lectura_prueba(simulacro_id, usuario.id)
         return [
             PreguntaCorregida(**x)
             for x in obtener_correccion(simulacro_id, usuario.id)
