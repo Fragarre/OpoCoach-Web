@@ -1,8 +1,10 @@
 import base64
 import stripe
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from pydantic import BaseModel
 
 from app.analisis_rendimiento import generar_analisis_rendimiento
+from app.chat_convocatoria import responder_chat
 from app.pdf_examen import generar_pdf_preguntas
 from app.pdf_soluciones import generar_pdf_soluciones
 from app.auth import UsuarioAutenticado, usuario_actual
@@ -55,6 +57,19 @@ from app.simulacros import (
     obtener_resultado_para_analisis,
     obtener_resultado_acumulado,
 )
+
+class ChatMensajeRequest(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    convocatoria_id: int
+    pregunta: str
+    mensajes_previos: list[ChatMensajeRequest] = []
+    modo: str = "CONVOCATORIA"
+
+
 
 app = FastAPI(
     title="OpoCoach API",
@@ -178,6 +193,52 @@ def crear_checkout_api(
             status_code=502,
             detail=f"Stripe no ha podido crear el Checkout: {mensaje}",
         ) from exc
+
+
+@app.post("/api/v1/chat")
+def chat_api(
+    datos: ChatRequest,
+    _usuario: UsuarioAutenticado = Depends(usuario_actual),
+) -> dict:
+    """
+    Chat autenticado de OpoCoach.
+
+    CONVOCATORIA:
+        Restringe la respuesta al corpus de la convocatoria indicada y a la
+        base de conocimiento funcional de OpoCoach.
+    GENERAL:
+        Usa conocimiento general del modelo y no recupera el corpus.
+    """
+    try:
+        if datos.convocatoria_id <= 0:
+            raise ValueError("La convocatoria no es válida.")
+
+        # Verifica que la convocatoria exista también en modo GENERAL, porque
+        # el frontend mantendrá siempre una convocatoria activa.
+        if obtener_resumen_convocatoria(datos.convocatoria_id) is None:
+            raise ValueError("La convocatoria no existe.")
+
+        mensajes = [
+            {
+                "role": mensaje.role,
+                "content": mensaje.content,
+            }
+            for mensaje in datos.mensajes_previos[-8:]
+            if mensaje.role in {"user", "assistant"}
+            and mensaje.content.strip()
+        ]
+
+        return responder_chat(
+            convocatoria_id=datos.convocatoria_id,
+            pregunta=datos.pregunta,
+            mensajes_previos=mensajes,
+            modo=datos.modo,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
 
 
 @app.get(

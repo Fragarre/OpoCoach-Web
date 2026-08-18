@@ -90,3 +90,29 @@ def seleccionar_fragmento_json(
             f"Respuesta recibida: {texto[:500]}"
         ) from exc
 
+def generar_respuesta_chat_ia(
+    prompt: str,
+    modelo: str = "gpt-5.4-nano",
+    operacion: str = "chat_convocatoria",
+) -> str:
+    """Genera una respuesta textual del Chat mediante Responses API."""
+    api_key = os.getenv("OPENAI_API_KEY_OPOCOACH")
+    if not api_key:
+        raise RuntimeError(
+            "Falta OPENAI_API_KEY_OPOCOACH en la configuración del backend."
+        )
+
+    cliente = OpenAI(api_key=api_key)
+    respuesta = cliente.responses.create(
+        model=modelo,
+        input=prompt,
+    )
+
+    texto = str(respuesta.output_text or "").strip()
+    if not texto:
+        raise RuntimeError(
+            f"OpenAI no devolvió texto para la operación {operacion}."
+        )
+
+    return texto
+
