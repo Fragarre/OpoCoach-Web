@@ -7,7 +7,12 @@ from uuid import UUID
 
 from psycopg.rows import dict_row
 
-from app.database import conectar_contenidos
+from app.database import (
+    ORIGEN_CONTENIDOS_POSTGRES,
+    conectar_contenidos_postgres,
+    conectar_contenidos_sqlite,
+    obtener_origen_contenidos,
+)
 from app.openai_api import seleccionar_fragmento_json
 from app.postgres import conectar_postgres
 
@@ -146,28 +151,49 @@ def _obtener_texto_articulo(
     norma_id_normalizada: Any | None,
     articulo_normalizado: Any | None,
 ) -> str | None:
-    """Usa el mismo corpus local de contenidos que la versión Streamlit."""
+    """Recupera el texto jurídico desde el origen de contenidos configurado."""
     norma_id = _limpiar_texto(norma_id_normalizada)
     articulo_buscado = _normalizar_articulo(articulo_normalizado)
 
     if not norma_id or not articulo_buscado:
         return None
 
-    with conectar_contenidos() as con:
-        filas = con.execute(
-            """
-            SELECT
-                tr.articulo_solicitado,
-                af.texto
-            FROM temario_referencias tr
-            JOIN articulos_fuente af
-              ON af.id = tr.articulo_fuente_id
-            WHERE CAST(tr.norma_id AS TEXT) = ?
-              AND af.texto IS NOT NULL
-              AND TRIM(af.texto) <> ''
-            """,
-            (norma_id,),
-        ).fetchall()
+    origen = obtener_origen_contenidos()
+
+    if origen == ORIGEN_CONTENIDOS_POSTGRES:
+        with conectar_contenidos_postgres() as con:
+            with con.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        tr.articulo_solicitado,
+                        af.texto
+                    FROM contenidos.temario_referencias tr
+                    JOIN contenidos.articulos_fuente af
+                      ON af.id = tr.articulo_fuente_id
+                    WHERE CAST(tr.norma_id AS TEXT) = %s
+                      AND af.texto IS NOT NULL
+                      AND TRIM(af.texto) <> ''
+                    """,
+                    (norma_id,),
+                )
+                filas = cur.fetchall()
+    else:
+        with conectar_contenidos_sqlite() as con:
+            filas = con.execute(
+                """
+                SELECT
+                    tr.articulo_solicitado,
+                    af.texto
+                FROM temario_referencias tr
+                JOIN articulos_fuente af
+                  ON af.id = tr.articulo_fuente_id
+                WHERE CAST(tr.norma_id AS TEXT) = ?
+                  AND af.texto IS NOT NULL
+                  AND TRIM(af.texto) <> ''
+                """,
+                (norma_id,),
+            ).fetchall()
 
     for fila in filas:
         articulo_candidato = _normalizar_articulo(

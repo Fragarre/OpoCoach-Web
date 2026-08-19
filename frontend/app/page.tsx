@@ -297,6 +297,16 @@ export default function Home() {
     Record<string, AnalisisRendimiento>
   >({});
   const [mensaje, setMensaje] = useState("");
+
+  useEffect(() => {
+    if (!mensaje) return;
+
+    const temporizador = window.setTimeout(() => {
+      setMensaje("");
+    }, 3000);
+
+    return () => window.clearTimeout(temporizador);
+  }, [mensaje]);
   const [error, setError] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [accionEnCurso, setAccionEnCurso] = useState<string | null>(null);
@@ -1424,37 +1434,67 @@ export default function Home() {
           </section>
 
           <section className="public-proof" id="como-funciona">
-            <div>
-              <span className="eyebrow">Cómo funciona</span>
-              <h2>Una herramienta para practicar, corregir y mejorar</h2>
+            <div className="public-proof-heading">
+              <div>
+                <span className="eyebrow">Cómo funciona</span>
+                <h2>De practicar preguntas a entender cómo estás preparando el examen</h2>
+              </div>
+              <p>
+                OpoCoach acompaña todo el ciclo de entrenamiento: eliges qué
+                practicar, respondes, corriges y utilizas lo aprendido para decidir
+                dónde concentrar el siguiente esfuerzo.
+              </p>
             </div>
 
-            <div className="public-feature-grid">
+            <div className="public-process">
               <article id="simulacros">
-                <span className="public-feature-number">01</span>
-                <h3>Simulacros completos</h3>
-                <p>
-                  Practica con pruebas construidas para reproducir la estructura
-                  de la convocatoria y trabaja también con tu nivel de seguridad.
-                </p>
+                <span className="process-number">01</span>
+                <div className="process-content">
+                  <span className="process-kicker">Entrena</span>
+                  <h3>Elige cómo quieres practicar</h3>
+                  <p>
+                    Haz un simulacro completo o construye un test específico por
+                    temas, leyes o normas de tu convocatoria.
+                  </p>
+                </div>
               </article>
 
               <article id="tests">
-                <span className="public-feature-number">02</span>
-                <h3>Tests dirigidos</h3>
-                <p>
-                  Elige temas o leyes y normas concretas para reforzar exactamente
-                  las materias que necesitas trabajar.
-                </p>
+                <span className="process-number">02</span>
+                <div className="process-content">
+                  <span className="process-kicker">Responde</span>
+                  <h3>Contesta y registra tu seguridad</h3>
+                  <p>
+                    Resuelve las preguntas como en una prueba real y, si lo deseas,
+                    indica con qué seguridad has elegido cada respuesta.
+                  </p>
+                </div>
               </article>
 
               <article>
-                <span className="public-feature-number">03</span>
-                <h3>Corrección útil</h3>
-                <p>
-                  Revisa aciertos, errores, respuestas no contestadas y la
-                  seguridad con la que respondiste para detectar riesgos reales.
-                </p>
+                <span className="process-number">03</span>
+                <div className="process-content">
+                  <span className="process-kicker">Analiza</span>
+                  <h3>Corrige y detecta dónde está el riesgo</h3>
+                  <p>
+                    Revisa aciertos, fallos y preguntas no contestadas, y compara
+                    el resultado con tu nivel de confianza para localizar errores
+                    que merecen más atención.
+                  </p>
+                </div>
+              </article>
+
+              <article>
+                <span className="process-number">04</span>
+                <div className="process-content">
+                  <span className="process-kicker">Profundiza</span>
+                  <h3>Resuelve dudas con el Chat</h3>
+                  <p>
+                    Consulta el contenido de tu convocatoria o amplía la explicación
+                    con conocimiento general para comprender mejor la materia antes
+                    de volver a practicar.
+                  </p>
+                </div>
               </article>
             </div>
           </section>

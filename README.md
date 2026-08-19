@@ -258,3 +258,11 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 ```
 
 y reiniciar Uvicorn antes de repetir el Checkout.
+
+Modificar/importar/auditar contenidos en Mantenimiento
+                    ↓
+6. ADMINISTRACIÓN
+                    ↓
+2. Preparar publicación OpoCoach-Web
+                    ↓
+4. Actualizar contenidos Web en Supabase

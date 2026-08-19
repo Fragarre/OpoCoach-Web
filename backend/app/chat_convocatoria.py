@@ -20,7 +20,12 @@ from app.conocimiento_opocoach import (
     ENTRADAS_CONOCIMIENTO_OPOCOACH,
     EntradaConocimientoOpoCoach,
 )
-from app.database import conectar_contenidos
+from app.database import (
+    ORIGEN_CONTENIDOS_POSTGRES,
+    conectar_contenidos_postgres,
+    conectar_contenidos_sqlite,
+    obtener_origen_contenidos,
+)
 from app.openai_api import generar_respuesta_chat_ia
 
 
@@ -134,7 +139,47 @@ def _extraer_normas(pregunta: str) -> set[str]:
 def _obtener_corpus_convocatoria(
     convocatoria_id: int,
 ) -> list[dict[str, Any]]:
-    with conectar_contenidos() as con:
+    origen = obtener_origen_contenidos()
+
+    if origen == ORIGEN_CONTENIDOS_POSTGRES:
+        with conectar_contenidos_postgres() as con:
+            with con.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT
+                        af.id AS articulo_fuente_id,
+                        tt.id AS tema_id,
+                        tt.parte,
+                        tt.numero_tema,
+                        tt.titulo AS titulo_tema,
+                        tr.nombre_norma_csv,
+                        tr.nombre_norma_normalizada,
+                        tr.articulo_solicitado,
+                        af.articulo_boe,
+                        af.titulo_bloque,
+                        af.texto
+                    FROM contenidos.temarios t
+                    JOIN contenidos.temario_temas tt
+                        ON tt.temario_id = t.id
+                    JOIN contenidos.temario_referencias tr
+                        ON tr.tema_id = tt.id
+                    JOIN contenidos.articulos_fuente af
+                        ON af.id = tr.articulo_fuente_id
+                    WHERE t.convocatoria_id = %s
+                      AND tr.estado = 'COMPLETADO'
+                      AND af.texto IS NOT NULL
+                      AND TRIM(af.texto) <> ''
+                    ORDER BY
+                        tt.parte,
+                        tt.numero_tema,
+                        tr.nombre_norma_csv,
+                        tr.articulo_solicitado
+                    """,
+                    (convocatoria_id,),
+                )
+                return [dict(fila) for fila in cur.fetchall()]
+
+    with conectar_contenidos_sqlite() as con:
         filas = con.execute(
             """
             SELECT DISTINCT

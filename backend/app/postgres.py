@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import os
+import threading
+from contextlib import contextmanager
+from typing import Iterator
 
 import psycopg
 from dotenv import load_dotenv
+from psycopg_pool import ConnectionPool
 
 load_dotenv()
+
+_pool: ConnectionPool | None = None
+_pool_lock = threading.Lock()
 
 
 def obtener_database_url() -> str:
@@ -21,8 +28,38 @@ def obtener_database_url() -> str:
     return url
 
 
-def conectar_postgres() -> psycopg.Connection:
-    return psycopg.connect(obtener_database_url(), connect_timeout=10)
+def _obtener_pool() -> ConnectionPool:
+    global _pool
+
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                _pool = ConnectionPool(
+                    conninfo=obtener_database_url(),
+                    min_size=2,
+                    max_size=10,
+                    timeout=10.0,
+                    kwargs={"connect_timeout": 10},
+                    open=True,
+                    name="opocoach-postgres",
+                )
+
+    return _pool
+
+
+@contextmanager
+def conectar_postgres() -> Iterator[psycopg.Connection]:
+    with _obtener_pool().connection() as con:
+        yield con
+
+
+def cerrar_pool_postgres() -> None:
+    global _pool
+
+    with _pool_lock:
+        if _pool is not None:
+            _pool.close()
+            _pool = None
 
 
 def comprobar_postgres() -> dict[str, str]:

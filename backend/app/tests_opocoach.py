@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import random
+import re
 from uuid import UUID
 
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from app.database import conectar_contenidos
+from app.database import (
+    ORIGEN_CONTENIDOS_POSTGRES,
+    conectar_contenidos_postgres,
+    conectar_contenidos_sqlite,
+    obtener_origen_contenidos,
+)
 from app.postgres import conectar_postgres
 from app.simulacros import (
     _condicion_fuente,
@@ -16,6 +22,64 @@ from app.simulacros import (
 )
 
 
+_TABLAS_CONTENIDOS = (
+    "convocatorias",
+    "temarios",
+    "temario_temas",
+    "banco_preguntas_temas",
+    "banco_preguntas",
+    "lote_preguntas",
+    "normas",
+)
+
+
+def _sql_postgres(sqlite_sql: str) -> str:
+    """
+    Adapta únicamente el subconjunto SQL de contenidos usado en este módulo.
+    No se utiliza para consultas de public.* ni para escrituras.
+    """
+    consulta = sqlite_sql
+
+    # En PostgreSQL es obligatorio referenciar el esquema de contenidos.
+    for tabla in sorted(_TABLAS_CONTENIDOS, key=len, reverse=True):
+        consulta = re.sub(
+            rf"(?<![.\w]){re.escape(tabla)}\b",
+            f"contenidos.{tabla}",
+            consulta,
+        )
+
+    # Los placeholders de SQLite y psycopg son distintos.
+    consulta = consulta.replace("?", "%s")
+
+    # es_principal es INTEGER 0/1 en SQLite y boolean en PostgreSQL.
+    consulta = consulta.replace("bpt.es_principal = 1", "bpt.es_principal = TRUE")
+
+    return consulta
+
+
+def _consultar_contenidos(
+    sqlite_sql: str,
+    params: tuple = (),
+    *,
+    uno: bool = False,
+):
+    origen = obtener_origen_contenidos()
+
+    if origen == ORIGEN_CONTENIDOS_POSTGRES:
+        with conectar_contenidos_postgres() as con:
+            with con.cursor() as cur:
+                cur.execute(_sql_postgres(sqlite_sql), params)
+                fila_o_filas = cur.fetchone() if uno else cur.fetchall()
+    else:
+        with conectar_contenidos_sqlite() as con:
+            cursor = con.execute(sqlite_sql, params)
+            fila_o_filas = cursor.fetchone() if uno else cursor.fetchall()
+
+    if uno:
+        return dict(fila_o_filas) if fila_o_filas is not None else None
+    return [dict(fila) for fila in fila_o_filas]
+
+
 def obtener_puntos_temario_test(
     convocatoria_id: int,
     fuentes: list[str] | None,
@@ -23,49 +87,46 @@ def obtener_puntos_temario_test(
     fuentes_n = _normalizar_fuentes(fuentes)
     condicion = _condicion_fuente(fuentes_n)
 
-    with conectar_contenidos() as con:
-        filas = con.execute(
-            f"""
-            SELECT
-                tt.id,
-                tt.parte,
-                tt.numero_tema,
-                tt.titulo,
-                tt.tipo_contenido,
-                COUNT(DISTINCT CASE WHEN lp.id IS NOT NULL
-                                    THEN bp.pregunta_id END) AS disponibles
-            FROM temarios t
-            JOIN temario_temas tt
-              ON tt.temario_id = t.id
-            LEFT JOIN banco_preguntas_temas bpt
-              ON bpt.tema_id = tt.id
-             AND bpt.es_principal = 1
-            LEFT JOIN banco_preguntas bp
-              ON bp.id = bpt.banco_pregunta_id
-             AND bp.convocatoria_id = ?
-             AND bp.estado = 'INCLUIDA'
-            LEFT JOIN lote_preguntas lp
-              ON lp.id = bp.pregunta_id
-             AND ({condicion})
-            WHERE t.convocatoria_id = ?
-            GROUP BY
-                tt.id, tt.parte, tt.numero_tema,
-                tt.titulo, tt.tipo_contenido
-            HAVING COUNT(DISTINCT CASE WHEN lp.id IS NOT NULL
-                                       THEN bp.pregunta_id END) > 0
-            ORDER BY
-                CASE tt.parte
-                    WHEN 'GENERAL' THEN 1
-                    WHEN 'ESPECIAL' THEN 2
-                    ELSE 3
-                END,
-                tt.numero_tema,
-                tt.titulo
-            """,
-            (convocatoria_id, convocatoria_id),
-        ).fetchall()
-
-    return [dict(fila) for fila in filas]
+    return _consultar_contenidos(
+        f"""
+        SELECT
+            tt.id,
+            tt.parte,
+            tt.numero_tema,
+            tt.titulo,
+            tt.tipo_contenido,
+            COUNT(DISTINCT CASE WHEN lp.id IS NOT NULL
+                                THEN bp.pregunta_id END) AS disponibles
+        FROM temarios t
+        JOIN temario_temas tt
+          ON tt.temario_id = t.id
+        LEFT JOIN banco_preguntas_temas bpt
+          ON bpt.tema_id = tt.id
+         AND bpt.es_principal = 1
+        LEFT JOIN banco_preguntas bp
+          ON bp.id = bpt.banco_pregunta_id
+         AND bp.convocatoria_id = ?
+         AND bp.estado = 'INCLUIDA'
+        LEFT JOIN lote_preguntas lp
+          ON lp.id = bp.pregunta_id
+         AND ({condicion})
+        WHERE t.convocatoria_id = ?
+        GROUP BY
+            tt.id, tt.parte, tt.numero_tema,
+            tt.titulo, tt.tipo_contenido
+        HAVING COUNT(DISTINCT CASE WHEN lp.id IS NOT NULL
+                                   THEN bp.pregunta_id END) > 0
+        ORDER BY
+            CASE tt.parte
+                WHEN 'GENERAL' THEN 1
+                WHEN 'ESPECIAL' THEN 2
+                ELSE 3
+            END,
+            tt.numero_tema,
+            tt.titulo
+        """,
+        (convocatoria_id, convocatoria_id),
+    )
 
 
 def obtener_normas_test(
@@ -75,56 +136,53 @@ def obtener_normas_test(
     fuentes_n = _normalizar_fuentes(fuentes)
     condicion = _condicion_fuente(fuentes_n)
 
-    with conectar_contenidos() as con:
-        filas = con.execute(
-            f"""
-            SELECT
-                CASE
-                    WHEN lp.norma_id_normalizada IS NOT NULL
-                        THEN 'ID:' || CAST(lp.norma_id_normalizada AS TEXT)
-                    ELSE 'NOMBRE:' || LOWER(
-                        TRIM(
-                            COALESCE(
-                                NULLIF(TRIM(lp.nombre_norma_normalizado), ''),
-                                NULLIF(TRIM(lp.nombre_norma), '')
-                            )
-                        )
-                    )
-                END AS norma_clave,
-                COALESCE(
-                    MAX(n.nombre_canonico),
-                    MIN(
+    return _consultar_contenidos(
+        f"""
+        SELECT
+            CASE
+                WHEN lp.norma_id_normalizada IS NOT NULL
+                    THEN 'ID:' || CAST(lp.norma_id_normalizada AS TEXT)
+                ELSE 'NOMBRE:' || LOWER(
+                    TRIM(
                         COALESCE(
                             NULLIF(TRIM(lp.nombre_norma_normalizado), ''),
                             NULLIF(TRIM(lp.nombre_norma), '')
                         )
                     )
-                ) AS norma_nombre,
-                COUNT(DISTINCT bp.pregunta_id) AS disponibles
-            FROM banco_preguntas bp
-            JOIN lote_preguntas lp
-              ON lp.id = bp.pregunta_id
-            LEFT JOIN normas n
-              ON n.id = lp.norma_id_normalizada
-            WHERE bp.convocatoria_id = ?
-              AND bp.estado = 'INCLUIDA'
-              AND ({condicion})
-              AND UPPER(TRIM(COALESCE(lp.tipo_clasificacion, '')))
-                    <> 'INFORMATICA'
-              AND (
-                    lp.norma_id_normalizada IS NOT NULL
-                    OR COALESCE(
+                )
+            END AS norma_clave,
+            COALESCE(
+                MAX(n.nombre_canonico),
+                MIN(
+                    COALESCE(
                         NULLIF(TRIM(lp.nombre_norma_normalizado), ''),
                         NULLIF(TRIM(lp.nombre_norma), '')
-                    ) IS NOT NULL
-              )
-            GROUP BY norma_clave
-            ORDER BY norma_nombre
-            """,
-            (convocatoria_id,),
-        ).fetchall()
-
-    return [dict(fila) for fila in filas]
+                    )
+                )
+            ) AS norma_nombre,
+            COUNT(DISTINCT bp.pregunta_id) AS disponibles
+        FROM banco_preguntas bp
+        JOIN lote_preguntas lp
+          ON lp.id = bp.pregunta_id
+        LEFT JOIN normas n
+          ON n.id = lp.norma_id_normalizada
+        WHERE bp.convocatoria_id = ?
+          AND bp.estado = 'INCLUIDA'
+          AND ({condicion})
+          AND UPPER(TRIM(COALESCE(lp.tipo_clasificacion, '')))
+                <> 'INFORMATICA'
+          AND (
+                lp.norma_id_normalizada IS NOT NULL
+                OR COALESCE(
+                    NULLIF(TRIM(lp.nombre_norma_normalizado), ''),
+                    NULLIF(TRIM(lp.nombre_norma), '')
+                ) IS NOT NULL
+          )
+        GROUP BY norma_clave
+        ORDER BY norma_nombre
+        """,
+        (convocatoria_id,),
+    )
 
 
 def _repartir_proporcionalmente(
@@ -171,6 +229,205 @@ def _repartir_proporcionalmente(
     return reparto
 
 
+def _cargar_datos_creacion_test(
+    convocatoria_id: int,
+    temas_ids: list[int],
+    normas_claves: list[str],
+    modo: str,
+    condicion: str,
+) -> tuple[dict, list[dict], list[dict], list[str]]:
+    convocatoria = _consultar_contenidos(
+        """
+        SELECT
+            id, puesto, numero, anio, codigo, numero_preguntas,
+            valoracion_test_acierto, valoracion_test_fallo,
+            valoracion_test_no_contesta, formula_nota,
+            factor_escala_nota
+        FROM convocatorias
+        WHERE id = ?
+        """,
+        (convocatoria_id,),
+        uno=True,
+    )
+
+    if convocatoria is None:
+        raise ValueError("La convocatoria no existe.")
+
+    if modo == "TEMA":
+        marcadores = ", ".join("?" for _ in temas_ids)
+
+        elementos = _consultar_contenidos(
+            f"""
+            SELECT
+                tt.id AS elemento_id,
+                tt.numero_tema || '. ' || tt.parte || ' — ' ||
+                tt.titulo AS elemento_nombre
+            FROM temario_temas tt
+            JOIN temarios t ON t.id = tt.temario_id
+            WHERE t.convocatoria_id = ?
+              AND tt.id IN ({marcadores})
+            ORDER BY tt.parte, tt.numero_tema, tt.titulo
+            """,
+            (convocatoria_id, *temas_ids),
+        )
+
+        if len(elementos) != len(temas_ids):
+            raise ValueError(
+                "Alguno de los puntos seleccionados no pertenece "
+                "a la convocatoria."
+            )
+
+        candidatas = _consultar_contenidos(
+            f"""
+            SELECT DISTINCT
+                bp.id AS banco_pregunta_id,
+                bp.pregunta_id,
+                lp.enunciado, lp.opcion_a, lp.opcion_b,
+                lp.opcion_c, lp.opcion_d, lp.respuesta_correcta,
+                lp.tipo_clasificacion, lp.tipo_norma,
+                lp.nombre_norma, lp.articulo, lp.tema_no_juridico,
+                lp.origen_oposicion, lp.tipo_fuente,
+                lp.importacion_fichero_id, lp.pagina_origen,
+                lp.norma_id_normalizada, lp.articulo_normalizado,
+                lp.teorica_practica, lp.tipo_norma_normalizado,
+                COALESCE(
+                    n.nombre_canonico,
+                    lp.nombre_norma_normalizado
+                ) AS nombre_norma_normalizado,
+                bp.tipo_vinculacion,
+                bp.estado AS banco_estado,
+                bp.metodo_vinculacion,
+                bp.motivo_revision,
+                tt.id AS tema_id,
+                tt.parte AS tema_parte,
+                tt.numero_tema,
+                tt.titulo AS tema_titulo,
+                tt.tipo_contenido AS tema_tipo_contenido,
+                CAST(tt.id AS TEXT) AS elemento_id
+            FROM banco_preguntas bp
+            JOIN lote_preguntas lp
+              ON lp.id = bp.pregunta_id
+            LEFT JOIN normas n
+              ON n.id = lp.norma_id_normalizada
+            JOIN banco_preguntas_temas bpt
+              ON bpt.banco_pregunta_id = bp.id
+             AND bpt.es_principal = 1
+            JOIN temario_temas tt
+              ON tt.id = bpt.tema_id
+            WHERE bp.convocatoria_id = ?
+              AND bp.estado = 'INCLUIDA'
+              AND ({condicion})
+              AND tt.id IN ({marcadores})
+            """,
+            (convocatoria_id, *temas_ids),
+        )
+        claves_elementos = [str(x) for x in temas_ids]
+
+    else:
+        marcadores = ", ".join("?" for _ in normas_claves)
+        expresion = """
+            CASE
+                WHEN lp.norma_id_normalizada IS NOT NULL
+                    THEN 'ID:' || CAST(lp.norma_id_normalizada AS TEXT)
+                ELSE 'NOMBRE:' || LOWER(
+                    TRIM(
+                        COALESCE(
+                            NULLIF(TRIM(lp.nombre_norma_normalizado), ''),
+                            NULLIF(TRIM(lp.nombre_norma), '')
+                        )
+                    )
+                )
+            END
+        """
+
+        elementos = _consultar_contenidos(
+            f"""
+            SELECT
+                {expresion} AS elemento_id,
+                COALESCE(
+                    MAX(n.nombre_canonico),
+                    MIN(
+                        COALESCE(
+                            NULLIF(TRIM(lp.nombre_norma_normalizado), ''),
+                            NULLIF(TRIM(lp.nombre_norma), '')
+                        )
+                    )
+                ) AS elemento_nombre
+            FROM banco_preguntas bp
+            JOIN lote_preguntas lp
+              ON lp.id = bp.pregunta_id
+            LEFT JOIN normas n
+              ON n.id = lp.norma_id_normalizada
+            WHERE bp.convocatoria_id = ?
+              AND bp.estado = 'INCLUIDA'
+              AND ({condicion})
+              AND UPPER(TRIM(COALESCE(lp.tipo_clasificacion, '')))
+                    <> 'INFORMATICA'
+              AND {expresion} IN ({marcadores})
+            GROUP BY elemento_id
+            ORDER BY elemento_nombre
+            """,
+            (convocatoria_id, *normas_claves),
+        )
+
+        if len(elementos) != len(normas_claves):
+            raise ValueError(
+                "Alguna de las normas seleccionadas no pertenece "
+                "al banco de la convocatoria."
+            )
+
+        candidatas = _consultar_contenidos(
+            f"""
+            SELECT DISTINCT
+                bp.id AS banco_pregunta_id,
+                bp.pregunta_id,
+                lp.enunciado, lp.opcion_a, lp.opcion_b,
+                lp.opcion_c, lp.opcion_d, lp.respuesta_correcta,
+                lp.tipo_clasificacion, lp.tipo_norma,
+                lp.nombre_norma, lp.articulo, lp.tema_no_juridico,
+                lp.origen_oposicion, lp.tipo_fuente,
+                lp.importacion_fichero_id, lp.pagina_origen,
+                lp.norma_id_normalizada, lp.articulo_normalizado,
+                lp.teorica_practica, lp.tipo_norma_normalizado,
+                COALESCE(
+                    n.nombre_canonico,
+                    lp.nombre_norma_normalizado
+                ) AS nombre_norma_normalizado,
+                bp.tipo_vinculacion,
+                bp.estado AS banco_estado,
+                bp.metodo_vinculacion,
+                bp.motivo_revision,
+                tt.id AS tema_id,
+                tt.parte AS tema_parte,
+                tt.numero_tema,
+                tt.titulo AS tema_titulo,
+                tt.tipo_contenido AS tema_tipo_contenido,
+                {expresion} AS elemento_id
+            FROM banco_preguntas bp
+            JOIN lote_preguntas lp
+              ON lp.id = bp.pregunta_id
+            LEFT JOIN normas n
+              ON n.id = lp.norma_id_normalizada
+            JOIN banco_preguntas_temas bpt
+              ON bpt.banco_pregunta_id = bp.id
+             AND bpt.es_principal = 1
+            JOIN temario_temas tt
+              ON tt.id = bpt.tema_id
+            WHERE bp.convocatoria_id = ?
+              AND bp.estado = 'INCLUIDA'
+              AND ({condicion})
+              AND UPPER(TRIM(COALESCE(lp.tipo_clasificacion, '')))
+                    <> 'INFORMATICA'
+              AND {expresion} IN ({marcadores})
+            """,
+            (convocatoria_id, *normas_claves),
+        )
+        claves_elementos = normas_claves
+
+    return convocatoria, elementos, candidatas, claves_elementos
+
+
+
 def crear_test(
     convocatoria_id: int,
     numero_preguntas: int,
@@ -208,191 +465,15 @@ def crear_test(
     if modo == "NORMA" and not normas_claves:
         raise ValueError("Debe seleccionar al menos una ley o norma.")
 
-    with conectar_contenidos() as con:
-        convocatoria = con.execute(
-            """
-            SELECT
-                id, puesto, numero, anio, codigo, numero_preguntas,
-                valoracion_test_acierto, valoracion_test_fallo,
-                valoracion_test_no_contesta, formula_nota,
-                factor_escala_nota
-            FROM convocatorias
-            WHERE id = ?
-            """,
-            (convocatoria_id,),
-        ).fetchone()
-
-        if convocatoria is None:
-            raise ValueError("La convocatoria no existe.")
-
-        if modo == "TEMA":
-            marcadores = ", ".join("?" for _ in temas_ids)
-            elementos = con.execute(
-                f"""
-                SELECT
-                    tt.id AS elemento_id,
-                    tt.numero_tema || '. ' || tt.parte || ' — ' ||
-                    tt.titulo AS elemento_nombre
-                FROM temario_temas tt
-                JOIN temarios t ON t.id = tt.temario_id
-                WHERE t.convocatoria_id = ?
-                  AND tt.id IN ({marcadores})
-                ORDER BY tt.parte, tt.numero_tema, tt.titulo
-                """,
-                (convocatoria_id, *temas_ids),
-            ).fetchall()
-
-            if len(elementos) != len(temas_ids):
-                raise ValueError(
-                    "Alguno de los puntos seleccionados no pertenece "
-                    "a la convocatoria."
-                )
-
-            candidatas = con.execute(
-                f"""
-                SELECT DISTINCT
-                    bp.id AS banco_pregunta_id,
-                    bp.pregunta_id,
-                    lp.enunciado, lp.opcion_a, lp.opcion_b,
-                    lp.opcion_c, lp.opcion_d, lp.respuesta_correcta,
-                    lp.tipo_clasificacion, lp.tipo_norma,
-                    lp.nombre_norma, lp.articulo, lp.tema_no_juridico,
-                    lp.origen_oposicion, lp.tipo_fuente,
-                    lp.importacion_fichero_id, lp.pagina_origen,
-                    lp.norma_id_normalizada, lp.articulo_normalizado,
-                    lp.teorica_practica, lp.tipo_norma_normalizado,
-                    COALESCE(
-                        n.nombre_canonico,
-                        lp.nombre_norma_normalizado
-                    ) AS nombre_norma_normalizado,
-                    bp.tipo_vinculacion,
-                    bp.estado AS banco_estado,
-                    bp.metodo_vinculacion,
-                    bp.motivo_revision,
-                    tt.id AS tema_id,
-                    tt.parte AS tema_parte,
-                    tt.numero_tema,
-                    tt.titulo AS tema_titulo,
-                    tt.tipo_contenido AS tema_tipo_contenido,
-                    CAST(tt.id AS TEXT) AS elemento_id
-                FROM banco_preguntas bp
-                JOIN lote_preguntas lp
-                  ON lp.id = bp.pregunta_id
-                LEFT JOIN normas n
-                  ON n.id = lp.norma_id_normalizada
-                JOIN banco_preguntas_temas bpt
-                  ON bpt.banco_pregunta_id = bp.id
-                 AND bpt.es_principal = 1
-                JOIN temario_temas tt
-                  ON tt.id = bpt.tema_id
-                WHERE bp.convocatoria_id = ?
-                  AND bp.estado = 'INCLUIDA'
-                  AND ({condicion})
-                  AND tt.id IN ({marcadores})
-                """,
-                (convocatoria_id, *temas_ids),
-            ).fetchall()
-            claves_elementos = [str(x) for x in temas_ids]
-
-        else:
-            marcadores = ", ".join("?" for _ in normas_claves)
-            expresion = """
-                CASE
-                    WHEN lp.norma_id_normalizada IS NOT NULL
-                        THEN 'ID:' || CAST(lp.norma_id_normalizada AS TEXT)
-                    ELSE 'NOMBRE:' || LOWER(
-                        TRIM(
-                            COALESCE(
-                                NULLIF(TRIM(lp.nombre_norma_normalizado), ''),
-                                NULLIF(TRIM(lp.nombre_norma), '')
-                            )
-                        )
-                    )
-                END
-            """
-            elementos = con.execute(
-                f"""
-                SELECT
-                    {expresion} AS elemento_id,
-                    COALESCE(
-                        MAX(n.nombre_canonico),
-                        MIN(
-                            COALESCE(
-                                NULLIF(TRIM(lp.nombre_norma_normalizado), ''),
-                                NULLIF(TRIM(lp.nombre_norma), '')
-                            )
-                        )
-                    ) AS elemento_nombre
-                FROM banco_preguntas bp
-                JOIN lote_preguntas lp
-                  ON lp.id = bp.pregunta_id
-                LEFT JOIN normas n
-                  ON n.id = lp.norma_id_normalizada
-                WHERE bp.convocatoria_id = ?
-                  AND bp.estado = 'INCLUIDA'
-                  AND ({condicion})
-                  AND UPPER(TRIM(COALESCE(lp.tipo_clasificacion, '')))
-                        <> 'INFORMATICA'
-                  AND {expresion} IN ({marcadores})
-                GROUP BY elemento_id
-                ORDER BY elemento_nombre
-                """,
-                (convocatoria_id, *normas_claves),
-            ).fetchall()
-
-            if len(elementos) != len(normas_claves):
-                raise ValueError(
-                    "Alguna de las normas seleccionadas no pertenece "
-                    "al banco de la convocatoria."
-                )
-
-            candidatas = con.execute(
-                f"""
-                SELECT DISTINCT
-                    bp.id AS banco_pregunta_id,
-                    bp.pregunta_id,
-                    lp.enunciado, lp.opcion_a, lp.opcion_b,
-                    lp.opcion_c, lp.opcion_d, lp.respuesta_correcta,
-                    lp.tipo_clasificacion, lp.tipo_norma,
-                    lp.nombre_norma, lp.articulo, lp.tema_no_juridico,
-                    lp.origen_oposicion, lp.tipo_fuente,
-                    lp.importacion_fichero_id, lp.pagina_origen,
-                    lp.norma_id_normalizada, lp.articulo_normalizado,
-                    lp.teorica_practica, lp.tipo_norma_normalizado,
-                    COALESCE(
-                        n.nombre_canonico,
-                        lp.nombre_norma_normalizado
-                    ) AS nombre_norma_normalizado,
-                    bp.tipo_vinculacion,
-                    bp.estado AS banco_estado,
-                    bp.metodo_vinculacion,
-                    bp.motivo_revision,
-                    tt.id AS tema_id,
-                    tt.parte AS tema_parte,
-                    tt.numero_tema,
-                    tt.titulo AS tema_titulo,
-                    tt.tipo_contenido AS tema_tipo_contenido,
-                    {expresion} AS elemento_id
-                FROM banco_preguntas bp
-                JOIN lote_preguntas lp
-                  ON lp.id = bp.pregunta_id
-                LEFT JOIN normas n
-                  ON n.id = lp.norma_id_normalizada
-                JOIN banco_preguntas_temas bpt
-                  ON bpt.banco_pregunta_id = bp.id
-                 AND bpt.es_principal = 1
-                JOIN temario_temas tt
-                  ON tt.id = bpt.tema_id
-                WHERE bp.convocatoria_id = ?
-                  AND bp.estado = 'INCLUIDA'
-                  AND ({condicion})
-                  AND UPPER(TRIM(COALESCE(lp.tipo_clasificacion, '')))
-                        <> 'INFORMATICA'
-                  AND {expresion} IN ({marcadores})
-                """,
-                (convocatoria_id, *normas_claves),
-            ).fetchall()
-            claves_elementos = normas_claves
+    convocatoria, elementos, candidatas, claves_elementos = (
+        _cargar_datos_creacion_test(
+            convocatoria_id=convocatoria_id,
+            temas_ids=temas_ids,
+            normas_claves=normas_claves,
+            modo=modo,
+            condicion=condicion,
+        )
+    )
 
     por_elemento = {clave: [] for clave in claves_elementos}
     for pregunta in candidatas:

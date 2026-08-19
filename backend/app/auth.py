@@ -13,6 +13,15 @@ from app.postgres import conectar_postgres
 
 bearer = HTTPBearer(auto_error=False)
 
+_supabase_http = httpx.Client(
+    timeout=10.0,
+    limits=httpx.Limits(
+        max_connections=20,
+        max_keepalive_connections=10,
+        keepalive_expiry=30.0,
+    ),
+)
+
 
 @dataclass(frozen=True)
 class UsuarioAutenticado:
@@ -49,13 +58,12 @@ def validar_access_token(token: str) -> UsuarioAutenticado:
     perfil local de OpoCoach existe y está activo.
     """
     try:
-        respuesta = httpx.get(
+        respuesta = _supabase_http.get(
             f"{obtener_supabase_url()}/auth/v1/user",
             headers={
                 "Authorization": f"Bearer {token}",
                 "apikey": obtener_supabase_public_key(),
             },
-            timeout=10.0,
         )
     except httpx.HTTPError as exc:
         raise HTTPException(

@@ -13,3 +13,8 @@ frontend/*.zip
 
 # Base local de pruebas
 backend/data/usuario_pruebas.sqlite3
+
+# Credenciales locales de pruebas E2E
+.env.e2e
+playwright-report/
+test-results/

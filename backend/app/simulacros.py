@@ -3,13 +3,20 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from uuid import UUID
 
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from app.database import conectar_contenidos
+from app.database import (
+    ORIGEN_CONTENIDOS_POSTGRES,
+    conectar_contenidos_postgres,
+    conectar_contenidos_sqlite,
+    obtener_origen_contenidos,
+)
 from app.postgres import conectar_postgres
 
 ORIGENES_VALIDOS = {"A1", "A2", "C1", "C2"}
@@ -17,6 +24,58 @@ FUENTES_VALIDAS = {"REAL", "IA"}
 RESPUESTAS_VALIDAS = {"A", "B", "C", "D"}
 SEGURIDADES_VALIDAS = {"SEGURO", "MENOS_SEGURO"}
 DIAS_SIN_REPETICION = 3
+
+
+_TABLAS_CONTENIDOS = (
+    "convocatorias",
+    "convocatoria_partes",
+    "convocatoria_modelo_bloques",
+    "banco_preguntas",
+    "lote_preguntas",
+    "normas",
+    "banco_preguntas_temas",
+    "temario_temas",
+)
+
+
+def _sql_postgres(sqlite_sql: str) -> str:
+    """Adapta a PostgreSQL el subconjunto SQL de contenidos de este módulo."""
+    if "FROM sqlite_master" in sqlite_sql:
+        return """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'contenidos'
+              AND table_name = 'convocatoria_modelo_bloques'
+        """
+
+    consulta = sqlite_sql
+    for tabla in sorted(_TABLAS_CONTENIDOS, key=len, reverse=True):
+        consulta = re.sub(
+            rf"(?<![.\w]){re.escape(tabla)}\b",
+            f"contenidos.{tabla}",
+            consulta,
+        )
+    consulta = consulta.replace("?", "%s")
+    consulta = consulta.replace("bpt.es_principal = 1", "bpt.es_principal = TRUE")
+    return consulta
+
+
+class _ConexionContenidosDual:
+    def __init__(self, con, postgres: bool):
+        self._con = con
+        self._postgres = postgres
+
+    def execute(self, sql: str, params=()):
+        consulta = _sql_postgres(sql) if self._postgres else sql
+        return self._con.execute(consulta, params)
+
+
+@contextmanager
+def _conectar_contenidos_dual():
+    postgres = obtener_origen_contenidos() == ORIGEN_CONTENIDOS_POSTGRES
+    fabrica = conectar_contenidos_postgres if postgres else conectar_contenidos_sqlite
+    with fabrica() as con:
+        yield _ConexionContenidosDual(con, postgres)
 
 
 def _normalizar_origenes(origenes: list[str]) -> list[str]:
@@ -67,7 +126,7 @@ def obtener_disponibilidad(
     marcas = ", ".join("?" for _ in origenes_n)
     condicion = _condicion_fuente(fuentes_n)
 
-    with conectar_contenidos() as con:
+    with _conectar_contenidos_dual() as con:
         filas = con.execute(
             f"""
             SELECT cp.id AS parte_id, cp.nombre AS parte, cp.orden AS parte_orden,
@@ -518,7 +577,7 @@ def crear_simulacro(
     marcas = ", ".join("?" for _ in origenes_n)
     condicion = _condicion_fuente(fuentes_n)
 
-    with conectar_contenidos() as con:
+    with _conectar_contenidos_dual() as con:
         convocatoria = con.execute(
             """
             SELECT id, puesto, numero, anio, codigo, numero_preguntas,
@@ -712,7 +771,7 @@ def crear_simulacro(
                 )
                 VALUES (
                     %s, %s, %s, %s, 'SIMULACRO',
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    FALSE, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 RETURNING id
                 """,

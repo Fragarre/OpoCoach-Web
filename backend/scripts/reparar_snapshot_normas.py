@@ -2,20 +2,40 @@ from __future__ import annotations
 
 from psycopg.rows import dict_row
 
-from app.database import conectar_contenidos
+from app.database import (
+    ORIGEN_CONTENIDOS_POSTGRES,
+    conectar_contenidos_postgres,
+    conectar_contenidos_sqlite,
+    obtener_origen_contenidos,
+)
 from app.postgres import conectar_postgres
 
 
 def cargar_nombres_canonicos() -> dict[int, str]:
-    with conectar_contenidos() as con:
-        filas = con.execute(
-            """
-            SELECT id, nombre_canonico
-            FROM normas
-            WHERE nombre_canonico IS NOT NULL
-              AND TRIM(nombre_canonico) <> ''
-            """
-        ).fetchall()
+    origen = obtener_origen_contenidos()
+
+    if origen == ORIGEN_CONTENIDOS_POSTGRES:
+        with conectar_contenidos_postgres() as con:
+            with con.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, nombre_canonico
+                    FROM contenidos.normas
+                    WHERE nombre_canonico IS NOT NULL
+                      AND TRIM(nombre_canonico) <> ''
+                    """
+                )
+                filas = cur.fetchall()
+    else:
+        with conectar_contenidos_sqlite() as con:
+            filas = con.execute(
+                """
+                SELECT id, nombre_canonico
+                FROM normas
+                WHERE nombre_canonico IS NOT NULL
+                  AND TRIM(nombre_canonico) <> ''
+                """
+            ).fetchall()
 
     return {
         int(fila["id"]): str(fila["nombre_canonico"]).strip()
