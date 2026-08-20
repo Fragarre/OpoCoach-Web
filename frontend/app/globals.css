@@ -271,6 +271,56 @@ code {
   font-weight: 600;
 }
 
+.loading-spinner {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  border: 3px solid rgba(52, 73, 94, 0.22);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: opocoach-spin 0.8s linear infinite;
+}
+
+.loading-spinner-large {
+  width: 28px;
+  height: 28px;
+  border-width: 4px;
+  margin-top: 2px;
+}
+
+@keyframes opocoach-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.long-operation-message {
+  padding: 18px 20px;
+  border-radius: 12px;
+  align-items: flex-start;
+  min-height: 96px;
+}
+
+.long-operation-message .feedback-text {
+  display: grid;
+  gap: 6px;
+  line-height: 1.4;
+}
+
+.long-operation-message .feedback-text strong {
+  font-size: 1.02rem;
+}
+
+.long-operation-message .feedback-text span {
+  font-weight: 500;
+}
+
+.long-operation-message .feedback-text small {
+  font-weight: 500;
+  opacity: 0.8;
+}
+
 .simulacro-toolbar {
   display: flex;
   gap: 16px;
@@ -2108,3 +2158,33 @@ button:not(:disabled):active {
   }
 }
 
+
+
+.floating-timer {
+  position: fixed;
+  top: 104px;
+  right: 24px;
+  z-index: 80;
+  min-width: 210px;
+  padding: 12px 16px;
+  border: 1px solid #cbd7e6;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 8px 24px rgba(15, 39, 76, 0.14);
+  backdrop-filter: blur(6px);
+}
+
+.floating-timer > div {
+  margin-bottom: 0 !important;
+}
+
+@media (max-width: 760px) {
+  .floating-timer {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    min-width: 0;
+    text-align: center;
+  }
+}

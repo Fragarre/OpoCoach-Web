@@ -275,6 +275,7 @@ export default function Home() {
   const [misTests, setMisTests] = useState<SimulacroListado[]>([]);
   const [seccion, setSeccion] = useState<"INICIO" | "SIMULACROS" | "TESTS" | "CHAT">("INICIO");
   const [tipoActivo, setTipoActivo] = useState<"SIMULACRO" | "TEST" | null>(null);
+  const [convocatoriaSimulacroId, setConvocatoriaSimulacroId] = useState<number | null>(null);
   const [convocatoriaTestId, setConvocatoriaTestId] = useState<number | null>(null);
   const [modoTest, setModoTest] = useState<"TEMA" | "NORMA">("TEMA");
   const [numeroPreguntasTest, setNumeroPreguntasTest] = useState(20);
@@ -292,6 +293,8 @@ export default function Home() {
   const [tiempoPrevioCorreccion, setTiempoPrevioCorreccion] = useState(0);
   const [inicioCorreccionMs, setInicioCorreccionMs] = useState<number | null>(null);
   const [correccion, setCorreccion] = useState<PreguntaCorregida[]>([]);
+  const [vistaPrueba, setVistaPrueba] = useState<"RESUMEN" | "PREGUNTAS">("RESUMEN");
+  const [mostrarCorreccionPantalla, setMostrarCorreccionPantalla] = useState(false);
   const [resultadoAcumulado, setResultadoAcumulado] = useState<ResultadoAcumulado | null>(null);
   const [analisisRendimiento, setAnalisisRendimiento] = useState<
     Record<string, AnalisisRendimiento>
@@ -404,6 +407,9 @@ export default function Home() {
         setMisSimulacros(guardados);
         setMisTests(tests);
         setEstadoSuscripcion(suscripcion);
+        if (convocatoriaSimulacroId === null && lista.length > 0) {
+          setConvocatoriaSimulacroId(lista[0].id);
+        }
         if (convocatoriaTestId === null && lista.length > 0) {
           setConvocatoriaTestId(lista[0].id);
         }
@@ -468,6 +474,8 @@ export default function Home() {
     setMostrarCronometro(false);
     setTiempoPrevioCorreccion(0);
     setInicioCorreccionMs(null);
+    setVistaPrueba("RESUMEN");
+    setMostrarCorreccionPantalla(false);
   }
 
 
@@ -543,6 +551,7 @@ export default function Home() {
         setMostrarCronometro(false);
         setCorreccion(corr);
         setResultadoAcumulado(acumulado);
+        setMostrarCorreccionPantalla(false);
       } else {
         const [lista, tiempo] = await Promise.all([
           apiFetch<Pregunta[]>(
@@ -562,6 +571,7 @@ export default function Home() {
         } else {
           iniciarTiempoCorreccion(tiempo.tiempo_correccion_segundos);
         }
+        setVistaPrueba("RESUMEN");
       }
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
@@ -571,6 +581,22 @@ export default function Home() {
       setAccionEnCurso(null);
     }
   }
+
+  function salirDePrueba(destino: "INICIO" | "LISTA") {
+    const tipo = tipoActivo;
+    limpiarSimulacro();
+    setMensaje("");
+    setError("");
+
+    if (destino === "INICIO") {
+      setSeccion("INICIO");
+    } else {
+      setSeccion(tipo === "TEST" ? "TESTS" : "SIMULACROS");
+    }
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
 
   async function modificarRespuestas() {
     if (simulacroId === null) return;
@@ -602,6 +628,7 @@ export default function Home() {
       setCorreccion([]);
       setResultadoAcumulado(null);
       iniciarTiempoCorreccion(tiempo.tiempo_correccion_segundos);
+      setVistaPrueba("PREGUNTAS");
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1098,6 +1125,7 @@ export default function Home() {
       setPreguntas(lista);
       inicializarRespuestas(lista);
       iniciarTiempoCorreccion(0);
+      setVistaPrueba("RESUMEN");
       await recargarSimulacros();
       setMensaje(
         `Simulacro ${creado.id} creado correctamente: ${lista.length} preguntas.`
@@ -1157,6 +1185,7 @@ export default function Home() {
       setPreguntas(lista);
       inicializarRespuestas(lista);
       iniciarTiempoCorreccion(0);
+      setVistaPrueba("RESUMEN");
       await recargarTests();
       await actualizarSuscripcion();
 
@@ -1192,13 +1221,16 @@ export default function Home() {
   function validarSeguridad(): string | null {
     if (!evaluarSeguridad) return null;
 
-    for (const p of preguntas) {
-      const local = respuestas[p.simulacro_pregunta_id];
-      if (local?.respuesta && !local.seguridad) {
-        return `La pregunta ${p.orden} está contestada pero no tiene nivel de seguridad.`;
-      }
-    }
-    return null;
+    const pendientes = preguntas
+      .filter((p) => {
+        const local = respuestas[p.simulacro_pregunta_id];
+        return Boolean(local?.respuesta && !local.seguridad);
+      })
+      .map((p) => p.orden);
+
+    if (pendientes.length === 0) return null;
+
+    return `Falta indicar el nivel de seguridad en ${pendientes.length === 1 ? "la pregunta" : "las preguntas"}: ${pendientes.join(", ")}.`;
   }
 
   async function guardar() {
@@ -1904,9 +1936,71 @@ export default function Home() {
             </div>
           )}
           {accionEnCurso && (
-            <div className="working feedback-message">
-              <div className="feedback-text">{accionEnCurso}</div>
-            </div>
+            accionEnCurso === "Creando simulacro..." ? (
+              <div className="working feedback-message long-operation-message">
+                <span className="loading-spinner loading-spinner-large" aria-hidden="true" />
+                <div className="feedback-text">
+                  <strong>Preparando el simulacro</strong>
+                  <span>
+                    Estamos seleccionando y organizando las preguntas de tu convocatoria.
+                    Esta operación puede tardar unos segundos.
+                  </span>
+                  <small>
+                    No cierres esta página; el simulacro aparecerá automáticamente cuando
+                    esté listo.
+                  </small>
+                </div>
+              </div>
+            ) : accionEnCurso === "Creando test..." ? (
+              <div className="working feedback-message long-operation-message">
+                <span className="loading-spinner loading-spinner-large" aria-hidden="true" />
+                <div className="feedback-text">
+                  <strong>Preparando el test</strong>
+                  <span>
+                    Estamos seleccionando y organizando las preguntas según los criterios
+                    elegidos. Esta operación puede tardar unos segundos.
+                  </span>
+                  <small>
+                    No cierres esta página; el test aparecerá automáticamente cuando esté
+                    listo.
+                  </small>
+                </div>
+              </div>
+            ) : accionEnCurso === "Generando PDF de soluciones..." ? (
+              <div className="working feedback-message long-operation-message">
+                <span className="loading-spinner loading-spinner-large" aria-hidden="true" />
+                <div className="feedback-text">
+                  <strong>Preparando el PDF de soluciones</strong>
+                  <span>
+                    Estamos generando las explicaciones de las respuestas. En una prueba
+                    completa puede tardar alrededor de un minuto.
+                  </span>
+                  <small>
+                    No cierres esta página; la descarga comenzará automáticamente cuando
+                    termine.
+                  </small>
+                </div>
+              </div>
+            ) : accionEnCurso === "Analizando los resultados acumulados..." ? (
+              <div className="working feedback-message long-operation-message">
+                <span className="loading-spinner loading-spinner-large" aria-hidden="true" />
+                <div className="feedback-text">
+                  <strong>Analizando tu rendimiento</strong>
+                  <span>
+                    Estamos procesando tus resultados y preparando el análisis
+                    personalizado. Esta operación puede tardar unos segundos.
+                  </span>
+                  <small>
+                    Mantén esta página abierta; el análisis aparecerá automáticamente.
+                  </small>
+                </div>
+              </div>
+            ) : (
+              <div className="working feedback-message">
+                <span className="loading-spinner" aria-hidden="true" />
+                <div className="feedback-text">{accionEnCurso}</div>
+              </div>
+            )
           )}
         </div>
       )}
@@ -2107,7 +2201,16 @@ export default function Home() {
 
       {resultado && (
         <section className="card">
-          <h2>Resultado</h2>
+          <div className="row space-between">
+            <h2>Resultado</h2>
+            <button
+              className="secondary"
+              type="button"
+              onClick={() => setMostrarCorreccionPantalla((actual) => !actual)}
+            >
+              {mostrarCorreccionPantalla ? "Ocultar corrección en pantalla" : "Ver corrección en pantalla"}
+            </button>
+          </div>
           {!modoSoloLecturaActivo && (
             <button
               className="secondary"
@@ -2470,6 +2573,41 @@ export default function Home() {
         </section>
       )}
 
+      {simulacroId === null &&
+        seccion === "SIMULACROS" &&
+        !modoHistoricoPostBaja && (
+        <section className="card">
+          <h2>Crear simulacro</h2>
+          <p className="muted">Selecciona la convocatoria y crea una prueba completa.</p>
+
+          <label htmlFor="convocatoria-simulacro">Convocatoria</label>
+          <select
+            id="convocatoria-simulacro"
+            className="select"
+            value={convocatoriaSimulacroId ?? ""}
+            onChange={(e) => setConvocatoriaSimulacroId(Number(e.target.value))}
+          >
+            {convocatorias.map((convocatoria) => (
+              <option key={convocatoria.id} value={convocatoria.id}>
+                {convocatoria.codigo} — {convocatoria.puesto}
+              </option>
+            ))}
+          </select>
+
+          <div style={{ marginTop: 18 }}>
+            <button
+              className="primary"
+              disabled={ocupado || convocatoriaSimulacroId === null}
+              onClick={() => convocatoriaSimulacroId !== null && crear(convocatoriaSimulacroId)}
+            >
+              {ocupado && accionEnCurso === "Creando simulacro..."
+                ? "Creando simulacro..."
+                : "Crear simulacro"}
+            </button>
+          </div>
+        </section>
+      )}
+
       {simulacroId === null && seccion === "SIMULACROS" && (
         <section className="card">
           <h2>Mis simulacros</h2>
@@ -2532,90 +2670,8 @@ export default function Home() {
         </section>
       )}
 
-      {simulacroId === null &&
-        seccion === "SIMULACROS" &&
-        !modoHistoricoPostBaja && (
-        <section className="card">
-          <h2>Crear simulacro</h2>
-
-          {convocatorias.map((convocatoria) => (
-            <div className="convocatoria" key={convocatoria.id}>
-              <strong>{convocatoria.codigo}</strong>
-              <div>
-                {convocatoria.puesto} · Convocatoria {convocatoria.numero}
-              </div>
-              <div style={{ marginTop: 10 }}>
-                <button
-                  className="primary"
-                  disabled={ocupado}
-                  onClick={() => crear(convocatoria.id)}
-                >
-                  {ocupado ? "Procesando..." : "Crear simulacro"}
-                </button>
-              </div>
-            </div>
-          ))}
-        </section>
-      )}
-
       {simulacroId === null && seccion === "TESTS" && !modoHistoricoPostBaja && (
         <>
-          <section className="card">
-            <h2>Mis tests</h2>
-            {misTests.length === 0 ? (
-              <p className="muted">Todavía no hay tests guardados.</p>
-            ) : (
-              <div className="saved-list">
-                {misTests.map((test) => (
-                  <div className="saved-row" key={test.id}>
-                    <div className="saved-main">
-                      <strong>
-                        Nº {test.numero} ·{" "}
-                        {test.convocatoria_codigo ??
-                          `Convocatoria ${test.convocatoria_id}`}
-                      </strong>
-                      <div className="muted">
-                        {new Date(test.fecha_generacion).toLocaleString("es-ES")} ·{" "}
-                        {test.total_preguntas} preguntas · {test.contestadas} contestadas
-                      </div>
-                    </div>
-                    <span
-                      className={
-                        test.estado === "FINALIZADO"
-                          ? "status status-finished"
-                          : "status status-pending"
-                      }
-                    >
-                      {test.estado === "FINALIZADO" ? "Corregido" : "Pendiente"}
-                    </span>
-                    <div className="saved-actions">
-                      <button
-                        className="secondary"
-                        disabled={ocupado}
-                        onClick={() => abrirSimulacro(test)}
-                      >
-                        {test.estado === "FINALIZADO"
-                          ? "Ver corrección"
-                          : itemSoloLectura(test)
-                            ? "Ver preguntas"
-                            : "Continuar"}
-                      </button>
-                      {!itemSoloLectura(test) && (
-                        <button
-                          className="danger"
-                          disabled={ocupado}
-                          onClick={() => eliminarGuardado(test)}
-                        >
-                          Eliminar
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
           <section className="card">
             <h2>Construir test</h2>
 
@@ -2722,36 +2778,109 @@ export default function Home() {
               </button>
             </div>
           </section>
+
+          <section className="card">
+            <h2>Mis tests</h2>
+            {misTests.length === 0 ? (
+              <p className="muted">Todavía no hay tests guardados.</p>
+            ) : (
+              <div className="saved-list">
+                {misTests.map((test) => (
+                  <div className="saved-row" key={test.id}>
+                    <div className="saved-main">
+                      <strong>
+                        Nº {test.numero} ·{" "}
+                        {test.convocatoria_codigo ??
+                          `Convocatoria ${test.convocatoria_id}`}
+                      </strong>
+                      <div className="muted">
+                        {new Date(test.fecha_generacion).toLocaleString("es-ES")} ·{" "}
+                        {test.total_preguntas} preguntas · {test.contestadas} contestadas
+                      </div>
+                    </div>
+                    <span
+                      className={
+                        test.estado === "FINALIZADO"
+                          ? "status status-finished"
+                          : "status status-pending"
+                      }
+                    >
+                      {test.estado === "FINALIZADO" ? "Corregido" : "Pendiente"}
+                    </span>
+                    <div className="saved-actions">
+                      <button
+                        className="secondary"
+                        disabled={ocupado}
+                        onClick={() => abrirSimulacro(test)}
+                      >
+                        {test.estado === "FINALIZADO"
+                          ? "Ver corrección"
+                          : itemSoloLectura(test)
+                            ? "Ver preguntas"
+                            : "Continuar"}
+                      </button>
+                      {!itemSoloLectura(test) && (
+                        <button
+                          className="danger"
+                          disabled={ocupado}
+                          onClick={() => eliminarGuardado(test)}
+                        >
+                          Eliminar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
         </>
       )}
 
-      {simulacroId !== null && !resultado && (
+      {simulacroId !== null && (
         <section className="card sticky-actions">
           <div className="simulacro-toolbar">
             <div>
               <strong>{tipoActivo === "TEST" ? "Test" : "Simulacro"} {simulacroId}</strong>
               <div className="muted">
-                {evaluarSeguridad
-                  ? "Marca respuesta y seguridad en cada pregunta contestada."
-                  : "Marca la respuesta de cada pregunta."}
+                {resultado
+                  ? "Prueba corregida. Puedes revisar el resultado, descargar los PDFs o volver a tu espacio de trabajo."
+                  : vistaPrueba === "RESUMEN"
+                    ? "Elige si quieres realizar la prueba en pantalla o trabajar con los documentos PDF."
+                    : evaluarSeguridad
+                      ? "Marca respuesta y seguridad en cada pregunta contestada."
+                      : "Marca la respuesta de cada pregunta."}
               </div>
             </div>
             <div className="toolbar-actions">
               <button
                 className="secondary"
                 disabled={ocupado}
-                onClick={() => {
-                  const volverA = tipoActivo;
-                  limpiarSimulacro();
-                  setSeccion(volverA === "TEST" ? "TESTS" : "SIMULACROS");
-                  setMensaje("");
-                  setError("");
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }}
+                onClick={() => salirDePrueba("INICIO")}
+              >
+                Inicio
+              </button>
+              <button
+                className="secondary"
+                disabled={ocupado}
+                onClick={() => salirDePrueba("LISTA")}
               >
                 {tipoActivo === "TEST" ? "Volver a mis tests" : "Volver a mis simulacros"}
               </button>
-              {!modoSoloLecturaActivo && (
+              {!resultado && vistaPrueba === "RESUMEN" && !modoSoloLecturaActivo && (
+                <button
+                  className="primary"
+                  disabled={ocupado}
+                  onClick={() => {
+                    setVistaPrueba("PREGUNTAS");
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                >
+                  Realizar en pantalla
+                </button>
+              )}
+              {!resultado && !modoSoloLecturaActivo && vistaPrueba === "PREGUNTAS" && (
                 <>
                   <button className="secondary" disabled={ocupado} onClick={guardar}>
                     {ocupado && accionEnCurso?.startsWith("Guardando respuestas")
@@ -2770,7 +2899,7 @@ export default function Home() {
         </section>
       )}
 
-      {simulacroId !== null && !resultado && (
+      {simulacroId !== null && !resultado && vistaPrueba === "PREGUNTAS" && (
         <section className="card">
           {modoSoloLecturaActivo ? (
             <div className="working" style={{ marginBottom: 18 }}>
@@ -2791,10 +2920,12 @@ export default function Home() {
               </p>
 
               {mostrarCronometro && inicioCorreccionMs !== null && (
-                <CronometroCorreccion
-                  inicioMs={inicioCorreccionMs}
-                  tiempoPrevio={tiempoPrevioCorreccion}
-                />
+                <div className="floating-timer" role="status" aria-live="polite">
+                  <CronometroCorreccion
+                    inicioMs={inicioCorreccionMs}
+                    tiempoPrevio={tiempoPrevioCorreccion}
+                  />
+                </div>
               )}
 
               <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 18 }}>
@@ -2911,18 +3042,13 @@ export default function Home() {
         </section>
       )}
 
-      {resultado && (
+      {resultado && mostrarCorreccionPantalla && (
         <section className="card">
           <div className="row space-between">
-            <h2>Corrección</h2>
+            <h2>Corrección en pantalla</h2>
             <button
               className="secondary"
-              onClick={() => {
-                limpiarSimulacro();
-                setMensaje("");
-                setError("");
-                window.scrollTo({ top: 0, behavior: "smooth" });
-              }}
+              onClick={() => salirDePrueba("LISTA")}
             >
               {tipoActivo === "TEST" ? "Volver a mis tests" : "Volver a mis simulacros"}
             </button>
