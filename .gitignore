@@ -18,3 +18,4 @@ backend/data/usuario_pruebas.sqlite3
 .env.e2e
 playwright-report/
 test-results/
+backend/data/*.rollback
