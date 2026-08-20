@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Iterable
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Callable, Iterable
 from uuid import UUID
 
 from psycopg.rows import dict_row
@@ -17,8 +19,9 @@ from app.openai_api import seleccionar_fragmento_json
 from app.postgres import conectar_postgres
 
 
-TAMANO_LOTE = 16
-MODELO_PREDETERMINADO = "gpt-5.4-mini"
+TAMANO_LOTE = 24
+MAX_TRABAJADORES_IA = 3
+MODELO_PREDETERMINADO = "gpt-5.4-nano"
 OPERACION_IA = "comentarios_pdf_soluciones"
 
 
@@ -28,8 +31,9 @@ Eres preparador de oposiciones.
 La respuesta correcta de cada pregunta ya está determinada. No debes resolver
 la pregunta de nuevo ni cuestionar la respuesta indicada.
 
-Recibirás preguntas de dos tipos: JURIDICA e INFORMATICA. Redacta un comentario
-claro que explique por qué la opción indicada es correcta.
+Recibirás preguntas JURIDICAS y NO JURIDICAS. Las no jurídicas suelen ser
+de INFORMATICA. Redacta un comentario claro que explique por qué la opción
+indicada es correcta.
 
 REGLAS PARA PREGUNTAS JURIDICAS:
 - Utiliza exclusivamente la norma, el artículo y el texto de la fuente aportada.
@@ -43,7 +47,7 @@ REGLAS PARA PREGUNTAS JURIDICAS:
   encajan con la regla del artículo, sin analizarlas una por una.
 - No uses conocimiento jurídico externo ni completes información ausente.
 
-REGLAS PARA PREGUNTAS INFORMATICAS:
+REGLAS PARA PREGUNTAS NO JURIDICAS, INCLUIDAS LAS INFORMATICAS:
 - Utiliza el enunciado, las opciones y la respuesta correcta proporcionada.
 - Explica el concepto, función, comando, herramienta o comportamiento técnico
   que hace correcta esa opción.
@@ -81,20 +85,23 @@ valor de "orden".
 
 
 def _limpiar_texto(valor: Any | None) -> str:
+    """Convierte cualquier valor en texto limpio de una sola línea."""
     if valor is None:
         return ""
     return " ".join(str(valor).split()).strip()
 
 
 def _normalizar_articulo(valor: Any | None) -> str:
+    """Extrae la referencia numérica principal del artículo."""
     texto = _limpiar_texto(valor).lower()
     if not texto:
         return ""
-    texto = texto.replace("artículo", "")
-    texto = texto.replace("articulo", "")
-    texto = re.sub(r"\bart\.?\b", "", texto)
-    texto = re.sub(r"\s+", "", texto)
-    return texto.rstrip(".")
+
+    texto = texto.replace(",", ".")
+    coincidencia = re.search(r"\b\d+(?:\.\d+)*\b", texto)
+    if coincidencia is None:
+        return ""
+    return coincidencia.group(0)
 
 
 def _dividir_lotes(
@@ -124,6 +131,7 @@ def _obtener_preguntas_pendientes(
                     ss.opcion_d,
                     ss.respuesta_correcta,
                     ss.tipo_clasificacion,
+                    ss.tema_no_juridico,
                     ss.nombre_norma,
                     ss.articulo,
                     ss.norma_id_normalizada,
@@ -147,86 +155,166 @@ def _obtener_preguntas_pendientes(
             return [dict(fila) for fila in cur.fetchall()]
 
 
-def _obtener_texto_articulo(
-    norma_id_normalizada: Any | None,
-    articulo_normalizado: Any | None,
-) -> str | None:
-    """Recupera el texto jurídico desde el origen de contenidos configurado."""
-    norma_id = _limpiar_texto(norma_id_normalizada)
-    articulo_buscado = _normalizar_articulo(articulo_normalizado)
+def _cargar_fuentes_juridicas(
+    preguntas: list[dict[str, Any]],
+) -> dict[tuple[str, str], str]:
+    """
+    Carga en una sola consulta los textos jurídicos necesarios para el conjunto
+    de preguntas.
 
-    if not norma_id or not articulo_buscado:
-        return None
+    En OpoCoach Streamlit la consulta individual por pregunta es barata porque
+    los contenidos están en SQLite local. En Web, repetir esa misma estrategia
+    contra PostgreSQL/Supabase introduce una latencia de red por pregunta.
+    Esta función evita el patrón N+1 de consultas remotas y carga en bloque
+    todas las referencias de las normas necesarias. La selección exacta o
+    por artículo padre se realiza después en memoria.
+    """
+    normas_necesarias: set[str] = set()
 
+    for pregunta in preguntas:
+        tipo = _limpiar_texto(pregunta.get("tipo_clasificacion")).upper()
+        if tipo != "JURIDICA":
+            continue
+
+        norma_id = _limpiar_texto(pregunta.get("norma_id_normalizada"))
+        articulo = _normalizar_articulo(pregunta.get("articulo_normalizado"))
+        if not norma_id or not articulo:
+            continue
+
+        normas_necesarias.add(norma_id)
+
+    if not normas_necesarias:
+        return {}
+
+    normas_ordenadas = sorted(normas_necesarias)
     origen = obtener_origen_contenidos()
 
     if origen == ORIGEN_CONTENIDOS_POSTGRES:
+        marcadores = ", ".join(["%s"] * len(normas_ordenadas))
         with conectar_contenidos_postgres() as con:
-            with con.cursor() as cur:
+            with con.cursor(row_factory=dict_row) as cur:
                 cur.execute(
-                    """
+                    f"""
                     SELECT
+                        CAST(tr.norma_id AS TEXT) AS norma_id,
                         tr.articulo_solicitado,
                         af.texto
                     FROM contenidos.temario_referencias tr
                     JOIN contenidos.articulos_fuente af
                       ON af.id = tr.articulo_fuente_id
-                    WHERE CAST(tr.norma_id AS TEXT) = %s
+                    WHERE CAST(tr.norma_id AS TEXT) IN ({marcadores})
                       AND af.texto IS NOT NULL
                       AND TRIM(af.texto) <> ''
                     """,
-                    (norma_id,),
+                    tuple(normas_ordenadas),
                 )
                 filas = cur.fetchall()
     else:
+        marcadores = ", ".join(["?"] * len(normas_ordenadas))
         with conectar_contenidos_sqlite() as con:
             filas = con.execute(
-                """
+                f"""
                 SELECT
+                    CAST(tr.norma_id AS TEXT) AS norma_id,
                     tr.articulo_solicitado,
                     af.texto
                 FROM temario_referencias tr
                 JOIN articulos_fuente af
                   ON af.id = tr.articulo_fuente_id
-                WHERE CAST(tr.norma_id AS TEXT) = ?
+                WHERE CAST(tr.norma_id AS TEXT) IN ({marcadores})
                   AND af.texto IS NOT NULL
                   AND TRIM(af.texto) <> ''
                 """,
-                (norma_id,),
+                tuple(normas_ordenadas),
             ).fetchall()
 
+    fuentes: dict[tuple[str, str], str] = {}
     for fila in filas:
-        articulo_candidato = _normalizar_articulo(
-            fila["articulo_solicitado"]
-        )
-        if articulo_candidato == articulo_buscado:
-            texto = _limpiar_texto(fila["texto"])
-            return texto or None
+        norma_id = _limpiar_texto(fila["norma_id"])
+        articulo = _normalizar_articulo(fila["articulo_solicitado"])
+        clave = (norma_id, articulo)
 
-    return None
+        if not norma_id or not articulo or clave in fuentes:
+            continue
+
+        texto = _limpiar_texto(fila["texto"])
+        if texto:
+            fuentes[clave] = texto
+
+    return fuentes
 
 
 def _preparar_preguntas(
     preguntas: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[int]]:
+) -> tuple[list[dict[str, Any]], list[int], list[dict[str, Any]]]:
     preparadas: list[dict[str, Any]] = []
     sin_fuente: list[int] = []
+    detalle_sin_fuente: list[dict[str, Any]] = []
+
+    fuentes_juridicas = _cargar_fuentes_juridicas(preguntas)
 
     for pregunta in preguntas:
         orden = int(pregunta["orden"])
         tipo_clasificacion = _limpiar_texto(
             pregunta.get("tipo_clasificacion")
         ).upper()
-        es_informatica = tipo_clasificacion == "INFORMATICA"
+
+        # Paridad funcional con OpoCoach Streamlit:
+        # sólo JURIDICA exige fuente normativa. El resto es no jurídico.
+        es_juridica = tipo_clasificacion == "JURIDICA"
         texto_fuente: str | None = None
 
-        if not es_informatica:
-            texto_fuente = _obtener_texto_articulo(
-                pregunta.get("norma_id_normalizada"),
-                pregunta.get("articulo_normalizado"),
+        if es_juridica:
+            norma_id = _limpiar_texto(
+                pregunta.get("norma_id_normalizada")
             )
+            articulo_normalizado = _normalizar_articulo(
+                pregunta.get("articulo_normalizado")
+            )
+            # Paridad con OpoCoach Streamlit validado:
+            # primero referencia exacta y, si no existe, apartados/artículo padre.
+            # Ej.: 34.1.b (normalizado 34.1) -> 34.1 -> 34.
+            referencias_busqueda = [articulo_normalizado]
+            partes = articulo_normalizado.split(".")
+
+            while len(partes) > 1:
+                partes = partes[:-1]
+                referencias_busqueda.append(".".join(partes))
+
+            for referencia in referencias_busqueda:
+                texto_fuente = fuentes_juridicas.get(
+                    (norma_id, referencia)
+                )
+                if texto_fuente:
+                    break
+
             if not texto_fuente:
                 sin_fuente.append(orden)
+                detalle_sin_fuente.append(
+                    {
+                        "orden": orden,
+                        "tipo_clasificacion": tipo_clasificacion,
+                        "tema_no_juridico": _limpiar_texto(
+                            pregunta.get("tema_no_juridico")
+                        ),
+                        "nombre_norma": _limpiar_texto(
+                            pregunta.get("nombre_norma")
+                        ),
+                        "norma_id_normalizada": pregunta.get(
+                            "norma_id_normalizada"
+                        ),
+                        "articulo": _limpiar_texto(
+                            pregunta.get("articulo")
+                        ),
+                        "articulo_normalizado": _limpiar_texto(
+                            pregunta.get("articulo_normalizado")
+                        ),
+                        "articulo_clave": articulo_normalizado,
+                        "enunciado": _limpiar_texto(
+                            pregunta.get("enunciado")
+                        ),
+                    }
+                )
                 continue
 
         preparadas.append(
@@ -236,7 +324,7 @@ def _preparar_preguntas(
                 ),
                 "orden": orden,
                 "tipo_clasificacion": (
-                    "INFORMATICA" if es_informatica else "JURIDICA"
+                    "JURIDICA" if es_juridica else "NO_JURIDICA"
                 ),
                 "enunciado": _limpiar_texto(pregunta.get("enunciado")),
                 "opciones": {
@@ -249,21 +337,20 @@ def _preparar_preguntas(
                     pregunta.get("respuesta_correcta")
                 ).upper(),
                 "norma": (
-                    "" if es_informatica else _limpiar_texto(
-                        pregunta.get("nombre_norma")
-                    )
+                    _limpiar_texto(pregunta.get("nombre_norma"))
+                    if es_juridica
+                    else ""
                 ),
                 "articulo": (
-                    "" if es_informatica else _limpiar_texto(
-                        pregunta.get("articulo")
-                    )
+                    _limpiar_texto(pregunta.get("articulo"))
+                    if es_juridica
+                    else ""
                 ),
                 "texto_fuente": texto_fuente or "",
             }
         )
 
-    return preparadas, sin_fuente
-
+    return preparadas, sin_fuente, detalle_sin_fuente
 
 def _crear_prompt(lote: list[dict[str, Any]]) -> str:
     datos_ia = [
@@ -286,6 +373,24 @@ def _crear_prompt(lote: list[dict[str, Any]]) -> str:
     )
 
 
+def _limitar_comentario_palabras(
+    comentario: str,
+    max_palabras: int = 100,
+) -> str:
+    """
+    Garantiza de forma determinista el máximo de palabras del comentario.
+
+    Si la IA excede el límite, se conserva el comienzo hasta max_palabras.
+    No se repite todo el lote por un exceso puramente formal.
+    """
+    palabras = comentario.split()
+
+    if len(palabras) <= max_palabras:
+        return comentario
+
+    return " ".join(palabras[:max_palabras]).strip()
+
+
 def _validar_respuesta(
     respuesta: Any,
     lote: list[dict[str, Any]],
@@ -301,6 +406,7 @@ def _validar_respuesta(
             raise ValueError(
                 "La respuesta contiene un elemento que no es un objeto."
             )
+
         try:
             orden = int(elemento["orden"])
         except (KeyError, TypeError, ValueError) as exc:
@@ -309,6 +415,7 @@ def _validar_respuesta(
             ) from exc
 
         comentario = _limpiar_texto(elemento.get("comentario"))
+
         if orden not in esperados:
             raise ValueError(
                 f"La IA devolvió un orden inesperado: {orden}."
@@ -321,12 +428,19 @@ def _validar_respuesta(
             raise ValueError(
                 f"El comentario del orden {orden} está vacío."
             )
+
+        comentario = _limitar_comentario_palabras(
+            comentario,
+            max_palabras=100,
+        )
+
         comentarios[orden] = comentario
 
     if set(comentarios) != esperados:
         faltan = sorted(esperados - set(comentarios))
         raise ValueError(
-            f"La IA no devolvió todos los comentarios. Faltan: {faltan}."
+            "La IA no devolvió todos los comentarios. Faltan: "
+            + ", ".join(str(valor) for valor in faltan)
         )
 
     return comentarios
@@ -337,40 +451,103 @@ def _guardar_comentarios(
     comentarios: dict[int, str],
     user_id: UUID,
 ) -> int:
+    """Guarda todos los comentarios del lote con un único UPDATE PostgreSQL."""
     ids_por_orden = {
         int(p["orden"]): int(p["simulacro_pregunta_id"])
         for p in lote
     }
-    actualizados = 0
+    pares = [
+        (ids_por_orden[int(orden)], comentario)
+        for orden, comentario in comentarios.items()
+    ]
+
+    if not pares:
+        return 0
+
+    valores_sql = ", ".join(["(%s, %s)"] * len(pares))
+    parametros: list[Any] = []
+    for simulacro_pregunta_id, comentario in pares:
+        parametros.extend((simulacro_pregunta_id, comentario))
+    parametros.append(user_id)
+
+    sql = f"""
+        UPDATE public.simulacro_snapshot AS ss
+        SET comentario_solucion = datos.comentario
+        FROM (VALUES {valores_sql})
+             AS datos(simulacro_pregunta_id, comentario)
+        WHERE ss.simulacro_pregunta_id = datos.simulacro_pregunta_id
+          AND (
+                ss.comentario_solucion IS NULL
+                OR BTRIM(ss.comentario_solucion) = ''
+              )
+          AND EXISTS (
+                SELECT 1
+                FROM public.simulacro_preguntas sp
+                JOIN public.simulacros s
+                  ON s.id = sp.simulacro_id
+                WHERE sp.id = ss.simulacro_pregunta_id
+                  AND s.user_id = %s
+              )
+    """
 
     with conectar_postgres() as con:
         with con.cursor() as cur:
-            for orden, comentario in comentarios.items():
-                cur.execute(
-                    """
-                    UPDATE public.simulacro_snapshot ss
-                    SET comentario_solucion = %s
-                    FROM public.simulacro_preguntas sp,
-                         public.simulacros s
-                    WHERE ss.simulacro_pregunta_id = %s
-                      AND sp.id = ss.simulacro_pregunta_id
-                      AND s.id = sp.simulacro_id
-                      AND s.user_id = %s
-                      AND (
-                            ss.comentario_solucion IS NULL
-                            OR BTRIM(ss.comentario_solucion) = ''
-                          )
-                    """,
-                    (
-                        comentario,
-                        ids_por_orden[orden],
-                        user_id,
-                    ),
-                )
-                actualizados += cur.rowcount
+            cur.execute(sql, tuple(parametros))
+            actualizados = cur.rowcount
         con.commit()
 
-    return actualizados
+    return int(actualizados)
+
+
+def _procesar_lote_ia(
+    numero_lote: int,
+    lote: list[dict[str, Any]],
+    modelo: str,
+) -> dict[str, Any]:
+    """Ejecuta la llamada IA de un lote y valida la respuesta; no escribe BD."""
+    prompt = _crear_prompt(lote)
+    respuesta: Any | None = None
+    errores_intentos: list[str] = []
+    tiempo_ia = 0.0
+    llamadas_ia = 0
+
+    for intento in (1, 2):
+        try:
+            inicio_ia = time.perf_counter()
+            try:
+                respuesta = seleccionar_fragmento_json(
+                    prompt=prompt,
+                    modelo=modelo,
+                    operacion=OPERACION_IA,
+                )
+            finally:
+                tiempo_ia += time.perf_counter() - inicio_ia
+                llamadas_ia += 1
+
+            comentarios = _validar_respuesta(respuesta, lote)
+            return {
+                "numero_lote": numero_lote,
+                "lote": lote,
+                "comentarios": comentarios,
+                "error": None,
+                "tiempo_ia": tiempo_ia,
+                "llamadas_ia": llamadas_ia,
+                "intentos_fallidos": intento - 1,
+            }
+        except Exception as exc:
+            errores_intentos.append(
+                f"Intento {intento}: {type(exc).__name__}: {exc}"
+            )
+
+    return {
+        "numero_lote": numero_lote,
+        "lote": lote,
+        "comentarios": None,
+        "error": "\n".join(errores_intentos),
+        "tiempo_ia": tiempo_ia,
+        "llamadas_ia": llamadas_ia,
+        "intentos_fallidos": 2,
+    }
 
 
 def generar_comentarios_soluciones(
@@ -378,65 +555,177 @@ def generar_comentarios_soluciones(
     user_id: UUID,
     modelo: str = MODELO_PREDETERMINADO,
     tamano_lote: int = TAMANO_LOTE,
+    progreso: Callable[[int, int, int], None] | None = None,
+    max_trabajadores_ia: int = MAX_TRABAJADORES_IA,
 ) -> dict[str, Any]:
-    """Genera sólo comentarios pendientes y los persiste de forma idempotente."""
-    if simulacro_id <= 0:
-        raise ValueError("simulacro_id debe ser mayor que cero.")
-    if tamano_lote <= 0:
-        raise ValueError("tamano_lote debe ser mayor que cero.")
+    """
+    Genera sólo comentarios pendientes y los persiste de forma idempotente.
 
-    pendientes = _obtener_preguntas_pendientes(simulacro_id, user_id)
-    preparadas, sin_fuente = _preparar_preguntas(pendientes)
+    Mantiene la seguridad multiusuario de OpoCoach-Web. Las llamadas IA se
+    ejecutan en paralelo, como en OpoCoach Streamlit, y las escrituras se hacen
+    después de forma secuencial y por lote.
+    """
+    inicio_total = time.perf_counter()
+
+    tiempo_lectura_postgres = 0.0
+    tiempo_preparacion = 0.0
+    tiempo_ia_acumulado = 0.0
+    tiempo_ia_pared = 0.0
+    tiempo_guardado_postgres = 0.0
+    llamadas_ia = 0
+    intentos_fallidos = 0
+    total_lotes = 0
 
     resumen: dict[str, Any] = {
         "simulacro_id": simulacro_id,
-        "pendientes_iniciales": len(pendientes),
-        "con_fuente": len(preparadas),
-        "sin_fuente": sin_fuente,
+        "pendientes_iniciales": 0,
+        "con_fuente": 0,
+        "sin_fuente": [],
+        "detalle_sin_fuente": [],
         "actualizadas": 0,
         "errores": [],
         "lotes_procesados": 0,
     }
 
-    if not preparadas:
-        return resumen
+    try:
+        if simulacro_id <= 0:
+            raise ValueError("simulacro_id debe ser mayor que cero.")
+        if tamano_lote <= 0:
+            raise ValueError("tamano_lote debe ser mayor que cero.")
+        if max_trabajadores_ia <= 0:
+            raise ValueError("max_trabajadores_ia debe ser mayor que cero.")
 
-    for numero_lote, lote in enumerate(
-        _dividir_lotes(preparadas, tamano_lote),
-        start=1,
-    ):
-        prompt = _crear_prompt(lote)
-        errores_intentos: list[str] = []
-        lote_completado = False
+        inicio = time.perf_counter()
+        pendientes = _obtener_preguntas_pendientes(simulacro_id, user_id)
+        tiempo_lectura_postgres += time.perf_counter() - inicio
 
-        for intento in (1, 2):
-            try:
-                respuesta = seleccionar_fragmento_json(
-                    prompt=prompt,
-                    modelo=modelo,
-                    operacion=OPERACION_IA,
-                )
-                comentarios = _validar_respuesta(respuesta, lote)
-                resumen["actualizadas"] += _guardar_comentarios(
+        inicio = time.perf_counter()
+        preparadas, sin_fuente, detalle_sin_fuente = _preparar_preguntas(
+            pendientes
+        )
+        tiempo_preparacion += time.perf_counter() - inicio
+
+        resumen.update(
+            {
+                "pendientes_iniciales": len(pendientes),
+                "con_fuente": len(preparadas),
+                "sin_fuente": sin_fuente,
+                "detalle_sin_fuente": detalle_sin_fuente,
+            }
+        )
+
+        if not preparadas:
+            if progreso is not None:
+                progreso(0, 0, 0)
+            return resumen
+
+        lotes = list(_dividir_lotes(preparadas, tamano_lote))
+        total_lotes = len(lotes)
+        resultados: dict[int, dict[str, Any]] = {}
+
+        inicio_ia_pared = time.perf_counter()
+        with ThreadPoolExecutor(
+            max_workers=min(max_trabajadores_ia, total_lotes)
+        ) as executor:
+            futuros = {
+                executor.submit(
+                    _procesar_lote_ia,
+                    numero_lote,
                     lote,
-                    comentarios,
+                    modelo,
+                ): numero_lote
+                for numero_lote, lote in enumerate(lotes, start=1)
+            }
+
+            for futuro in as_completed(futuros):
+                resultado = futuro.result()
+                numero_lote = int(resultado["numero_lote"])
+                resultados[numero_lote] = resultado
+                tiempo_ia_acumulado += float(resultado["tiempo_ia"])
+                llamadas_ia += int(resultado["llamadas_ia"])
+                intentos_fallidos += int(resultado["intentos_fallidos"])
+
+        tiempo_ia_pared = time.perf_counter() - inicio_ia_pared
+
+        for numero_lote in range(1, total_lotes + 1):
+            resultado = resultados[numero_lote]
+            lote = resultado["lote"]
+            error = resultado["error"]
+
+            if error is None:
+                inicio = time.perf_counter()
+                actualizadas = _guardar_comentarios(
+                    lote,
+                    resultado["comentarios"],
                     user_id,
                 )
+                tiempo_guardado_postgres += time.perf_counter() - inicio
+
+                resumen["actualizadas"] += actualizadas
                 resumen["lotes_procesados"] += 1
-                lote_completado = True
-                break
-            except Exception as exc:
-                errores_intentos.append(
-                    f"Intento {intento}: {type(exc).__name__}: {exc}"
+            else:
+                resumen["errores"].append(
+                    {
+                        "lote": numero_lote,
+                        "ordenes": [int(p["orden"]) for p in lote],
+                        "error": error,
+                    }
                 )
 
-        if not lote_completado:
-            resumen["errores"].append(
-                {
-                    "lote": numero_lote,
-                    "ordenes": [int(p["orden"]) for p in lote],
-                    "error": "\n".join(errores_intentos),
-                }
-            )
+            if progreso is not None:
+                progreso(
+                    numero_lote,
+                    total_lotes,
+                    resumen["actualizadas"],
+                )
 
-    return resumen
+        return resumen
+
+    finally:
+        tiempo_total = time.perf_counter() - inicio_total
+        print(
+            "TIEMPOS comentarios soluciones WEB"
+            f" | total={tiempo_total:.2f}s"
+            f" | lectura_postgres={tiempo_lectura_postgres:.2f}s"
+            f" | preparacion_fuentes={tiempo_preparacion:.2f}s"
+            f" | ia_pared={tiempo_ia_pared:.2f}s"
+            f" | ia_acumulada={tiempo_ia_acumulado:.2f}s"
+            f" | guardado_postgres={tiempo_guardado_postgres:.2f}s"
+            f" | lotes={total_lotes}"
+            f" | llamadas_ia={llamadas_ia}"
+            f" | intentos_fallidos={intentos_fallidos}"
+            f" | tamano_lote={tamano_lote}"
+            f" | trabajadores_ia={max_trabajadores_ia}"
+            f" | pendientes={resumen['pendientes_iniciales']}"
+            f" | preparadas={resumen['con_fuente']}"
+            f" | sin_fuente_juridica={len(resumen['sin_fuente'])}"
+            f" | actualizadas={resumen['actualizadas']}"
+            f" | lotes_error={len(resumen['errores'])}",
+            flush=True,
+        )
+
+        if resumen["sin_fuente"]:
+            print(
+                "PREGUNTAS JURIDICAS SIN FUENTE PARA COMENTARIO: "
+                + ", ".join(str(orden) for orden in resumen["sin_fuente"]),
+                flush=True,
+            )
+            for detalle in resumen["detalle_sin_fuente"]:
+                print(
+                    "  SIN FUENTE"
+                    f" | orden={detalle['orden']}"
+                    f" | norma_id={detalle['norma_id_normalizada']}"
+                    f" | norma={detalle['nombre_norma']}"
+                    f" | articulo={detalle['articulo']}"
+                    f" | articulo_normalizado={detalle['articulo_normalizado']}"
+                    f" | articulo_clave={detalle['articulo_clave']}",
+                    flush=True,
+                )
+
+        if resumen["errores"]:
+            for error_lote in resumen["errores"]:
+                print(
+                    "ERROR COMENTARIOS LOTE "
+                    f'{error_lote["lote"]}: {error_lote["error"]}',
+                    flush=True,
+                )
