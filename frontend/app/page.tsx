@@ -262,6 +262,98 @@ function CronometroCorreccion({
   );
 }
 
+
+function renderChatInlineMarkdown(texto: string) {
+  const partes = texto.split(/(\*\*[^*]+\*\*)/g);
+
+  return partes.map((parte, indice) => {
+    if (parte.startsWith("**") && parte.endsWith("**") && parte.length >= 4) {
+      return <strong key={indice}>{parte.slice(2, -2)}</strong>;
+    }
+
+    return <span key={indice}>{parte}</span>;
+  });
+}
+
+function renderChatMarkdown(texto: string) {
+  const lineas = texto.replace(/\r\n/g, "\n").split("\n");
+  const elementos: React.ReactNode[] = [];
+  let indice = 0;
+
+  while (indice < lineas.length) {
+    const linea = lineas[indice].trim();
+
+    if (!linea) {
+      indice += 1;
+      continue;
+    }
+
+    if (/^-\s+/.test(linea)) {
+      const items: string[] = [];
+
+      while (
+        indice < lineas.length &&
+        /^-\s+/.test(lineas[indice].trim())
+      ) {
+        items.push(lineas[indice].trim().replace(/^-\s+/, ""));
+        indice += 1;
+      }
+
+      elementos.push(
+        <ul key={`ul-${indice}`} style={{ margin: "8px 0 8px 22px" }}>
+          {items.map((item, itemIndice) => (
+            <li key={itemIndice} style={{ marginBottom: 4 }}>
+              {renderChatInlineMarkdown(item)}
+            </li>
+          ))}
+        </ul>
+      );
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(linea)) {
+      const items: string[] = [];
+
+      while (
+        indice < lineas.length &&
+        /^\d+\.\s+/.test(lineas[indice].trim())
+      ) {
+        items.push(
+          lineas[indice].trim().replace(/^\d+\.\s+/, "")
+        );
+        indice += 1;
+      }
+
+      elementos.push(
+        <ol key={`ol-${indice}`} style={{ margin: "8px 0 8px 22px" }}>
+          {items.map((item, itemIndice) => (
+            <li key={itemIndice} style={{ marginBottom: 4 }}>
+              {renderChatInlineMarkdown(item)}
+            </li>
+          ))}
+        </ol>
+      );
+      continue;
+    }
+
+    elementos.push(
+      <p
+        key={`p-${indice}`}
+        style={{
+          margin: "0 0 10px 0",
+          lineHeight: 1.6,
+        }}
+      >
+        {renderChatInlineMarkdown(linea)}
+      </p>
+    );
+    indice += 1;
+  }
+
+  return elementos;
+}
+
+
 export default function Home() {
   const supabase = useMemo(() => createClient(), []);
   const [session, setSession] = useState<Session | null>(null);
@@ -2526,11 +2618,14 @@ export default function Home() {
                   <div
                     style={{
                       marginTop: 8,
-                      whiteSpace: "pre-wrap",
+                      whiteSpace:
+                        mensajeChat.role === "user" ? "pre-wrap" : "normal",
                       lineHeight: 1.55,
                     }}
                   >
-                    {mensajeChat.content}
+                    {mensajeChat.role === "assistant"
+                      ? renderChatMarkdown(mensajeChat.content)
+                      : mensajeChat.content}
                   </div>
                 </div>
               ))
@@ -2545,10 +2640,15 @@ export default function Home() {
             </label>
             <textarea
               id="chat-pregunta"
-              rows={4}
+              rows={7}
               value={chatEntrada}
               disabled={ocupado || chatConvocatoriaId === null}
               onChange={(event) => setChatEntrada(event.target.value)}
+              style={{
+                width: "100%",
+                minHeight: 150,
+                resize: "vertical",
+              }}
             />
             <div style={{ marginTop: 12 }}>
               <button
