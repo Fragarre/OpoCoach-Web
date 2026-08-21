@@ -4,8 +4,25 @@ OpoCoach-Web
 Archivo: app/chat_convocatoria.py
 ==============================================================================
 
-Recuperación del corpus de la convocatoria activa y generación de respuestas
-del chat especializado o del modo de conocimiento general.
+Descripción:
+    Recuperación del corpus jurídico de la convocatoria activa y generación
+    de respuestas del chat especializado.
+
+Lee:
+    - oposiciones.sqlite3:
+        convocatorias
+        temarios
+        temario_temas
+        temario_referencias
+        articulos_fuente
+
+Escribe:
+    - Ninguna tabla.
+
+Utiliza:
+    - app.database
+    - app.openai_api
+
 ==============================================================================
 """
 
@@ -26,7 +43,7 @@ from app.database import (
     conectar_contenidos_sqlite,
     obtener_origen_contenidos,
 )
-from app.openai_api import generar_respuesta_chat_ia
+from app.openai_api import generar_respuesta_chat_ia, seleccionar_fragmento_json
 
 
 MODELO_PREDETERMINADO = "gpt-5.4-nano"
@@ -36,6 +53,12 @@ OPERACION_IA_GENERAL = "chat_conocimiento_general"
 MAX_FRAGMENTOS = 8
 MAX_FRAGMENTOS_APLICACION = 4
 MAX_CARACTERES_CONTEXTO = 30_000
+
+# Recuperación semántica para consultas jurídicas conceptuales.
+MAX_TERMINOS_SEMANTICOS = 12
+MAX_CANDIDATOS_SEMANTICOS = 24
+MAX_ARTICULOS_SEMANTICOS = 4
+MAX_EXTRACTO_SEMANTICO = 700
 
 PALABRAS_VACIAS = {
     "a", "al", "algo", "ante", "como", "con", "contra", "cual", "cuando",
@@ -89,27 +112,50 @@ def _terminos(texto: str) -> set[str]:
     return {
         termino
         for termino in _normalizar(texto).split()
-        if len(termino) >= 3 and termino not in PALABRAS_VACIAS
+        if len(termino) >= 3
+        and termino not in PALABRAS_VACIAS
     }
 
 
 def _extraer_articulos(pregunta: str) -> set[str]:
-    normalizada = _normalizar(pregunta)
+    """
+    Detecta referencias como:
+        artículo 14
+        art. 14
+        artículos 14 y 15
+        artículos 30, 31, 32 y 33
+        artículo 14.1
+
+    Para esta extracción se conservan los puntos de los subapartados.
+    """
+    valor = unicodedata.normalize("NFKD", str(pregunta or ""))
+    valor = "".join(
+        caracter
+        for caracter in valor
+        if not unicodedata.combining(caracter)
+    ).lower()
+
     encontrados: set[str] = set()
+    patron_lista = (
+        r"\bart(?:\.|iculo|iculos)?\s+"
+        r"(\d+(?:\.\d+)*(?:\s*(?:,|y|e)\s*\d+(?:\.\d+)*)*)"
+    )
 
-    patrones = [
-        r"\bart(?:iculo|iculos)?\s+(\d+(?:\.\d+)*)",
-        r"\bart\s+(\d+(?:\.\d+)*)",
-    ]
-
-    for patron in patrones:
-        for coincidencia in re.findall(patron, normalizada):
-            encontrados.add(coincidencia.rstrip("."))
+    for bloque in re.findall(patron_lista, valor):
+        for articulo in re.findall(r"\d+(?:\.\d+)*", bloque):
+            encontrados.add(articulo.rstrip("."))
 
     return encontrados
 
 
 def _extraer_normas(pregunta: str) -> set[str]:
+    """
+    Extrae identificadores frecuentes de normas:
+        Ley 39/2015
+        Decreto 123/2020
+        Constitución
+        Estatuto
+    """
     normalizada = _normalizar(pregunta)
     normas: set[str] = set()
 
@@ -139,49 +185,93 @@ def _extraer_normas(pregunta: str) -> set[str]:
 def _obtener_corpus_convocatoria(
     convocatoria_id: int,
 ) -> list[dict[str, Any]]:
+    """
+    Corpus completo del Chat para una convocatoria.
+
+    Si una norma aparece en el temario mediante una referencia COMPLETADA con
+    norma_id, el Chat recibe todos los artículos disponibles de la fuente
+    principal de esa norma. Las referencias legacy sin norma_id conservan el
+    comportamiento anterior.
+
+    Sólo lectura. No afecta a bancos ni a reglas de simulacros/tests.
+    """
     origen = obtener_origen_contenidos()
 
-    if origen == ORIGEN_CONTENIDOS_POSTGRES:
-        with conectar_contenidos_postgres() as con:
-            with con.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT DISTINCT
-                        af.id AS articulo_fuente_id,
-                        tt.id AS tema_id,
-                        tt.parte,
-                        tt.numero_tema,
-                        tt.titulo AS titulo_tema,
-                        tr.nombre_norma_csv,
-                        tr.nombre_norma_normalizada,
-                        tr.articulo_solicitado,
-                        af.articulo_boe,
-                        af.titulo_bloque,
-                        af.texto
-                    FROM contenidos.temarios t
-                    JOIN contenidos.temario_temas tt
-                        ON tt.temario_id = t.id
-                    JOIN contenidos.temario_referencias tr
-                        ON tr.tema_id = tt.id
-                    JOIN contenidos.articulos_fuente af
-                        ON af.id = tr.articulo_fuente_id
-                    WHERE t.convocatoria_id = %s
-                      AND tr.estado = 'COMPLETADO'
-                      AND af.texto IS NOT NULL
-                      AND TRIM(af.texto) <> ''
+    sql_base = """
+        WITH fuentes_candidatas AS (
+            SELECT
+                tr.norma_id,
+                af.id_boe,
+                COUNT(DISTINCT tr.id) AS enlaces_temario,
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}articulos_fuente af_total
+                    WHERE af_total.id_boe = af.id_boe
+                      AND af_total.texto IS NOT NULL
+                      AND TRIM(af_total.texto) <> ''
+                ) AS articulos_fuente_total
+            FROM {schema}temarios t
+            JOIN {schema}temario_temas tt ON tt.temario_id = t.id
+            JOIN {schema}temario_referencias tr ON tr.tema_id = tt.id
+            JOIN {schema}articulos_fuente af ON af.id = tr.articulo_fuente_id
+            WHERE t.convocatoria_id = {param}
+              AND tr.estado = 'COMPLETADO'
+              AND tr.norma_id IS NOT NULL
+              AND af.texto IS NOT NULL
+              AND TRIM(af.texto) <> ''
+            GROUP BY tr.norma_id, af.id_boe
+        ),
+        fuentes_principales AS (
+            SELECT
+                norma_id,
+                id_boe,
+                ROW_NUMBER() OVER (
+                    PARTITION BY norma_id
                     ORDER BY
-                        tt.parte,
-                        tt.numero_tema,
-                        tr.nombre_norma_csv,
-                        tr.articulo_solicitado
-                    """,
-                    (convocatoria_id,),
-                )
-                return [dict(fila) for fila in cur.fetchall()]
-
-    with conectar_contenidos_sqlite() as con:
-        filas = con.execute(
-            """
+                        articulos_fuente_total DESC,
+                        enlaces_temario DESC,
+                        id_boe
+                ) AS orden_fuente
+            FROM fuentes_candidatas
+        ),
+        referencias_norma AS (
+            SELECT DISTINCT
+                tt.id AS tema_id,
+                tt.parte,
+                tt.numero_tema,
+                tt.titulo AS titulo_tema,
+                tr.norma_id,
+                tr.nombre_norma_csv,
+                tr.nombre_norma_normalizada
+            FROM {schema}temarios t
+            JOIN {schema}temario_temas tt ON tt.temario_id = t.id
+            JOIN {schema}temario_referencias tr ON tr.tema_id = tt.id
+            WHERE t.convocatoria_id = {param}
+              AND tr.estado = 'COMPLETADO'
+              AND tr.norma_id IS NOT NULL
+        ),
+        corpus_ampliado AS (
+            SELECT DISTINCT
+                af.id AS articulo_fuente_id,
+                rn.tema_id,
+                rn.parte,
+                rn.numero_tema,
+                rn.titulo_tema,
+                rn.nombre_norma_csv,
+                rn.nombre_norma_normalizada,
+                af.articulo_boe AS articulo_solicitado,
+                af.articulo_boe,
+                af.titulo_bloque,
+                af.texto
+            FROM referencias_norma rn
+            JOIN fuentes_principales fp
+                ON fp.norma_id = rn.norma_id
+               AND fp.orden_fuente = 1
+            JOIN {schema}articulos_fuente af ON af.id_boe = fp.id_boe
+            WHERE af.texto IS NOT NULL
+              AND TRIM(af.texto) <> ''
+        ),
+        corpus_legacy AS (
             SELECT DISTINCT
                 af.id AS articulo_fuente_id,
                 tt.id AS tema_id,
@@ -194,82 +284,522 @@ def _obtener_corpus_convocatoria(
                 af.articulo_boe,
                 af.titulo_bloque,
                 af.texto
-            FROM temarios t
-            JOIN temario_temas tt
-                ON tt.temario_id = t.id
-            JOIN temario_referencias tr
-                ON tr.tema_id = tt.id
-            JOIN articulos_fuente af
-                ON af.id = tr.articulo_fuente_id
-            WHERE t.convocatoria_id = ?
+            FROM {schema}temarios t
+            JOIN {schema}temario_temas tt ON tt.temario_id = t.id
+            JOIN {schema}temario_referencias tr ON tr.tema_id = tt.id
+            JOIN {schema}articulos_fuente af ON af.id = tr.articulo_fuente_id
+            WHERE t.convocatoria_id = {param}
               AND tr.estado = 'COMPLETADO'
+              AND tr.norma_id IS NULL
               AND af.texto IS NOT NULL
               AND TRIM(af.texto) <> ''
-            ORDER BY
-                tt.parte,
-                tt.numero_tema,
-                tr.nombre_norma_csv,
-                tr.articulo_solicitado
-            """,
-            (convocatoria_id,),
-        ).fetchall()
+        )
+        SELECT * FROM corpus_ampliado
+        UNION
+        SELECT * FROM corpus_legacy
+        ORDER BY parte, numero_tema, nombre_norma_csv, articulo_solicitado
+    """
+
+    parametros = (
+        convocatoria_id,
+        convocatoria_id,
+        convocatoria_id,
+    )
+
+    if origen == ORIGEN_CONTENIDOS_POSTGRES:
+        sql = sql_base.format(schema="contenidos.", param="%s")
+        with conectar_contenidos_postgres() as con:
+            with con.cursor() as cur:
+                cur.execute(sql, parametros)
+                return [dict(fila) for fila in cur.fetchall()]
+
+    sql = sql_base.format(schema="", param="?")
+    with conectar_contenidos_sqlite() as con:
+        filas = con.execute(sql, parametros).fetchall()
 
     return [dict(fila) for fila in filas]
 
 
-
-def _fila_coincide_norma(
-    fila: dict[str, Any],
-    normas_pregunta: set[str],
-) -> bool:
-    if not normas_pregunta:
-        return True
-
-    nombre_norma = _normalizar(
+def _nombre_norma_fila(fila: dict[str, Any]) -> str:
+    return str(
         fila.get("nombre_norma_csv")
         or fila.get("nombre_norma_normalizada")
+        or ""
+    ).strip()
+
+
+def _articulo_fila(fila: dict[str, Any]) -> str:
+    return str(
+        fila.get("articulo_boe")
+        or fila.get("articulo_solicitado")
+        or ""
+    ).strip()
+
+
+def _titulo_fila(fila: dict[str, Any]) -> str:
+    return " ".join(str(fila.get("titulo_bloque") or "").split())
+
+
+def _texto_fila(fila: dict[str, Any]) -> str:
+    return " ".join(str(fila.get("texto") or "").split())
+
+
+def _normas_disponibles_corpus(
+    corpus: list[dict[str, Any]],
+) -> list[str]:
+    por_normalizado: dict[str, str] = {}
+
+    for fila in corpus:
+        nombre = _nombre_norma_fila(fila)
+        clave = _normalizar(nombre)
+        if clave and clave not in por_normalizado:
+            por_normalizado[clave] = nombre
+
+    return sorted(
+        por_normalizado.values(),
+        key=_normalizar,
     )
-    titulo_tema = _normalizar(fila.get("titulo_tema"))
 
-    for norma in normas_pregunta:
-        # Identificadores normativos explícitos deben corresponder a la norma
-        # real del fragmento. Un título temático como "regulación constitucional"
-        # no puede sustituir a "Constitución Española".
-        es_identificador_formal = bool(
-            re.fullmatch(
-                r"(?:ley|decreto|real decreto|orden|reglamento)\s+\d+\s+\d{4}",
-                norma,
+
+def _resolver_nombre_norma(
+    solicitado: str,
+    normas_disponibles: list[str],
+) -> str | None:
+    objetivo = _normalizar(solicitado)
+
+    if not objetivo:
+        return None
+
+    for nombre in normas_disponibles:
+        if _normalizar(nombre) == objetivo:
+            return nombre
+
+    candidatos = [
+        nombre
+        for nombre in normas_disponibles
+        if objetivo in _normalizar(nombre)
+        or _normalizar(nombre) in objetivo
+    ]
+
+    if len(candidatos) == 1:
+        return candidatos[0]
+
+    return None
+
+
+def _seleccionar_norma_semantica(
+    pregunta: str,
+    corpus: list[dict[str, Any]],
+) -> str | None:
+    normas_disponibles = _normas_disponibles_corpus(corpus)
+
+    # Si el usuario ya identifica inequívocamente una norma, no gastamos
+    # una llamada IA para volver a seleccionarla.
+    normas_explicitas = _extraer_normas(pregunta)
+    if normas_explicitas:
+        resueltas = []
+        for valor in normas_explicitas:
+            nombre = _resolver_nombre_norma(
+                valor,
+                normas_disponibles,
             )
-        ) or norma in {"constitucion", "estatuto"}
+            if nombre and nombre not in resueltas:
+                resueltas.append(nombre)
 
-        if es_identificador_formal:
-            if norma in nombre_norma:
-                return True
+        if len(resueltas) == 1:
+            return resueltas[0]
+
+    inventario = "\n".join(
+        f"- {nombre}"
+        for nombre in normas_disponibles
+    )
+
+    prompt = f"""
+Actúas sólo como selector de norma para un sistema RAG jurídico.
+
+PREGUNTA:
+{pregunta}
+
+NORMAS DISPONIBLES:
+{inventario}
+
+Selecciona la ÚNICA norma que contiene principalmente la regulación necesaria
+para resolver la pregunta.
+
+Reglas:
+- No respondas la cuestión jurídica.
+- No añadas normas de contexto general si una sola norma basta.
+- No inventes normas ni uses ninguna que no esté en la lista.
+- Si la pregunta no es jurídica o no necesita consultar una norma de la lista,
+  devuelve null.
+- Devuelve exclusivamente JSON válido:
+{{"norma": "nombre de la norma o null"}}
+""".strip()
+
+    resultado = seleccionar_fragmento_json(
+        prompt=prompt,
+        modelo=MODELO_PREDETERMINADO,
+        operacion="chat_seleccion_norma",
+    )
+
+    valor = resultado.get("norma")
+    if valor is None:
+        return None
+
+    return _resolver_nombre_norma(
+        str(valor),
+        normas_disponibles,
+    )
+
+
+def _expandir_conceptos_semanticos(
+    pregunta: str,
+    norma: str,
+) -> list[str]:
+    prompt = f"""
+Actúas sólo como generador de términos de búsqueda jurídica para un sistema RAG.
+
+PREGUNTA:
+{pregunta}
+
+NORMA:
+{norma}
+
+Genera términos o expresiones jurídicas que probablemente aparezcan literalmente
+en los artículos que contienen la respuesta.
+
+Reglas:
+- Incluye variantes nominales, verbales o técnicas de las ideas de la pregunta.
+- Convierte lenguaje corriente en terminología jurídica probable.
+- No indiques números de artículo.
+- No respondas la pregunta.
+- Máximo {MAX_TERMINOS_SEMANTICOS} términos o expresiones.
+- Devuelve exclusivamente JSON válido:
+{{"terminos": ["...", "..."]}}
+""".strip()
+
+    resultado = seleccionar_fragmento_json(
+        prompt=prompt,
+        modelo=MODELO_PREDETERMINADO,
+        operacion="chat_expandir_consulta",
+    )
+
+    bruto = resultado.get("terminos", [])
+    if not isinstance(bruto, list):
+        return []
+
+    conceptos: list[str] = []
+
+    for valor in bruto:
+        concepto = _normalizar(valor)
+        if concepto and concepto not in conceptos:
+            conceptos.append(concepto)
+
+    return conceptos[:MAX_TERMINOS_SEMANTICOS]
+
+
+def _filas_unicas_norma(
+    corpus: list[dict[str, Any]],
+    norma: str,
+) -> dict[str, dict[str, Any]]:
+    objetivo = _normalizar(norma)
+    por_articulo: dict[str, dict[str, Any]] = {}
+
+    for fila in corpus:
+        if _normalizar(_nombre_norma_fila(fila)) != objetivo:
             continue
 
-        # Expresiones materiales como "procedimiento administrativo" pueden
-        # aparecer legítimamente en el nombre de la norma o en el título temático.
-        if norma in nombre_norma or norma in titulo_tema:
-            return True
+        articulo = _articulo_fila(fila)
+        if articulo and articulo not in por_articulo:
+            por_articulo[articulo] = fila
 
-    return False
+    return por_articulo
 
 
-def _fila_coincide_articulo(
+def _puntuar_semantico_local(
     fila: dict[str, Any],
-    articulos_pregunta: set[str],
-) -> bool:
-    if not articulos_pregunta:
-        return True
+    pregunta: str,
+    conceptos: list[str],
+) -> tuple[float, list[str]]:
+    titulo = _normalizar(_titulo_fila(fila))
+    texto = _normalizar(_texto_fila(fila))
 
-    articulo_solicitado = _normalizar(fila.get("articulo_solicitado"))
-    articulo_boe = _normalizar(fila.get("articulo_boe"))
+    terminos_pregunta = _terminos(pregunta)
+    terminos_titulo = _terminos(titulo)
+    terminos_texto = _terminos(texto)
 
-    return any(
-        articulo == articulo_solicitado or articulo == articulo_boe
-        for articulo in articulos_pregunta
+    puntuacion = 0.0
+    motivos: list[str] = []
+
+    # Coincidencias originales: apoyo débil.
+    for termino in terminos_pregunta:
+        if termino in terminos_titulo:
+            puntuacion += 5.0
+        elif termino in terminos_texto:
+            puntuacion += 1.0
+
+    # Conceptos expandidos: apoyo fuerte, sobre todo si aparecen en la rúbrica.
+    for concepto in conceptos:
+        if concepto in titulo:
+            puntuacion += 30.0
+            motivos.append(f"T:{concepto}")
+            continue
+
+        if concepto in texto:
+            puntuacion += 8.0
+            motivos.append(f"X:{concepto}")
+            continue
+
+        tokens = _terminos(concepto)
+        if not tokens:
+            continue
+
+        cobertura_titulo = len(tokens & terminos_titulo)
+        cobertura_texto = len(tokens & terminos_texto)
+
+        if cobertura_titulo:
+            puntuacion += 7.0 * cobertura_titulo
+            motivos.append(f"T~:{concepto}")
+        elif cobertura_texto:
+            puntuacion += 2.0 * cobertura_texto
+            motivos.append(f"X~:{concepto}")
+
+    return puntuacion, motivos
+
+
+def _preseleccionar_semantico(
+    por_articulo: dict[str, dict[str, Any]],
+    pregunta: str,
+    conceptos: list[str],
+) -> list[tuple[float, str, dict[str, Any], list[str]]]:
+    puntuados = []
+
+    for articulo, fila in por_articulo.items():
+        puntuacion, motivos = _puntuar_semantico_local(
+            fila=fila,
+            pregunta=pregunta,
+            conceptos=conceptos,
+        )
+
+        if puntuacion <= 0:
+            continue
+
+        puntuados.append(
+            (
+                puntuacion,
+                articulo,
+                fila,
+                motivos,
+            )
+        )
+
+    def clave_orden(
+        elemento: tuple[
+            float,
+            str,
+            dict[str, Any],
+            list[str],
+        ],
+    ) -> tuple[Any, ...]:
+        puntuacion, articulo, _fila, _motivos = elemento
+        prefijo = articulo.split(".")[0]
+        numero = int(prefijo) if prefijo.isdigit() else 10**9
+
+        return (
+            -puntuacion,
+            numero,
+            articulo,
+        )
+
+    puntuados.sort(key=clave_orden)
+
+    return puntuados[:MAX_CANDIDATOS_SEMANTICOS]
+
+
+def _seleccionar_articulos_semanticos_finales(
+    pregunta: str,
+    norma: str,
+    candidatos: list[
+        tuple[
+            float,
+            str,
+            dict[str, Any],
+            list[str],
+        ]
+    ],
+) -> list[str]:
+    if not candidatos:
+        return []
+
+    bloques = []
+
+    for _puntuacion, articulo, fila, _motivos in candidatos:
+        extracto = _texto_fila(fila)[:MAX_EXTRACTO_SEMANTICO]
+        bloques.append(
+            "\n".join(
+                [
+                    f"[ARTÍCULO {articulo}]",
+                    f"Rúbrica: {_titulo_fila(fila)}",
+                    f"Extracto: {extracto}",
+                ]
+            )
+        )
+
+    inventario = "\n\n".join(bloques)
+
+    prompt = f"""
+Actúas únicamente como selector final de artículos para un sistema RAG jurídico.
+
+PREGUNTA:
+{pregunta}
+
+NORMA:
+{norma}
+
+CANDIDATOS PRESELECCIONADOS:
+{inventario}
+
+Selecciona sólo los artículos cuyo texto sea realmente necesario o especialmente
+útil para responder correctamente.
+
+Reglas:
+- No respondas la pregunta.
+- No inventes artículos.
+- Usa sólo candidatos de la lista.
+- Prioriza la regla específica del supuesto y, cuando proceda, la regla general
+  que deba combinarse con ella.
+- No selecciones artículos sólo por palabras genéricas.
+- Máximo {MAX_ARTICULOS_SEMANTICOS} artículos.
+- Devuelve exclusivamente JSON válido:
+{{"articulos": ["21", "94"]}}
+""".strip()
+
+    resultado = seleccionar_fragmento_json(
+        prompt=prompt,
+        modelo=MODELO_PREDETERMINADO,
+        operacion="chat_seleccion_articulos",
     )
 
+    bruto = resultado.get("articulos", [])
+    if not isinstance(bruto, list):
+        return []
+
+    disponibles = {
+        articulo
+        for _puntuacion, articulo, _fila, _motivos
+        in candidatos
+    }
+
+    seleccion: list[str] = []
+
+    for valor in bruto:
+        articulo = str(valor).strip()
+        if articulo in disponibles and articulo not in seleccion:
+            seleccion.append(articulo)
+
+    return seleccion[:MAX_ARTICULOS_SEMANTICOS]
+
+
+def _buscar_fragmentos_semanticos(
+    corpus: list[dict[str, Any]],
+    pregunta: str,
+    max_fragmentos: int,
+) -> list[FragmentoCorpus]:
+    norma = _seleccionar_norma_semantica(
+        pregunta=pregunta,
+        corpus=corpus,
+    )
+
+    if not norma:
+        return []
+
+    por_articulo = _filas_unicas_norma(
+        corpus=corpus,
+        norma=norma,
+    )
+
+    if not por_articulo:
+        return []
+
+    conceptos = _expandir_conceptos_semanticos(
+        pregunta=pregunta,
+        norma=norma,
+    )
+
+    if not conceptos:
+        return []
+
+    candidatos = _preseleccionar_semantico(
+        por_articulo=por_articulo,
+        pregunta=pregunta,
+        conceptos=conceptos,
+    )
+
+    seleccion_articulos = _seleccionar_articulos_semanticos_finales(
+        pregunta=pregunta,
+        norma=norma,
+        candidatos=candidatos,
+    )
+
+    if not seleccion_articulos:
+        return []
+
+    salida: list[FragmentoCorpus] = []
+    caracteres = 0
+
+    for posicion, articulo in enumerate(
+        seleccion_articulos,
+        start=1,
+    ):
+        fila = por_articulo.get(articulo)
+        if fila is None:
+            continue
+
+        texto = str(fila.get("texto") or "")
+        longitud = len(texto)
+
+        if (
+            salida
+            and caracteres + longitud > MAX_CARACTERES_CONTEXTO
+        ):
+            continue
+
+        # Puntuación artificial sólo para conservar el orden decidido por el
+        # reranking semántico. No altera ningún dato persistido.
+        puntuacion = 1000.0 - float(posicion)
+
+        salida.append(
+            FragmentoCorpus(
+                articulo_fuente_id=int(
+                    fila["articulo_fuente_id"]
+                ),
+                tema_id=int(fila["tema_id"]),
+                parte=str(fila["parte"]),
+                numero_tema=int(fila["numero_tema"]),
+                titulo_tema=str(fila["titulo_tema"]),
+                nombre_norma=str(
+                    fila["nombre_norma_csv"]
+                    or fila["nombre_norma_normalizada"]
+                ),
+                articulo_solicitado=str(
+                    fila["articulo_solicitado"]
+                ),
+                articulo_boe=str(fila["articulo_boe"]),
+                titulo_bloque=str(fila["titulo_bloque"]),
+                texto=texto,
+                puntuacion=puntuacion,
+            )
+        )
+
+        caracteres += longitud
+
+        if len(salida) >= min(
+            max_fragmentos,
+            MAX_ARTICULOS_SEMANTICOS,
+        ):
+            break
+
+    return salida
 
 def _puntuar_fragmento(
     fila: dict[str, Any],
@@ -288,7 +818,9 @@ def _puntuar_fragmento(
         fila.get("nombre_norma_csv")
         or fila.get("nombre_norma_normalizada")
     )
-    articulo_solicitado = _normalizar(fila.get("articulo_solicitado"))
+    articulo_solicitado = _normalizar(
+        fila.get("articulo_solicitado")
+    )
     articulo_boe = _normalizar(fila.get("articulo_boe"))
     titulo_tema = _normalizar(fila.get("titulo_tema"))
     titulo_bloque = _normalizar(fila.get("titulo_bloque"))
@@ -308,19 +840,39 @@ def _puntuar_fragmento(
 
     puntuacion = 0.0
 
+    # Coincidencias explícitas de artículo.
+    #
+    # La comparación debe ser exacta. Una referencia al artículo 30 no puede
+    # puntuar como coincidencia del artículo 330, por ejemplo.
     for articulo in articulos_pregunta:
-        if articulo == articulo_solicitado or articulo == articulo_boe:
+        if (
+            articulo == articulo_solicitado
+            or articulo == articulo_boe
+        ):
             puntuacion += 120.0
 
+    # Coincidencias explícitas de norma.
     for norma in normas_pregunta:
         if norma in nombre_norma or norma in titulo_tema:
             puntuacion += 80.0
 
-    puntuacion += 10.0 * len(terminos_pregunta & terminos_campos)
-    puntuacion += 2.0 * len(terminos_pregunta & terminos_texto)
-    puntuacion += 1.0 * len(terminos_historial & terminos_campos)
-    puntuacion += 0.25 * len(terminos_historial & terminos_texto)
+    # Coincidencias de términos en metadatos y texto.
+    puntuacion += 10.0 * len(
+        terminos_pregunta & terminos_campos
+    )
+    puntuacion += 2.0 * len(
+        terminos_pregunta & terminos_texto
+    )
 
+    # El historial solo sirve como apoyo para preguntas de continuación.
+    puntuacion += 1.0 * len(
+        terminos_historial & terminos_campos
+    )
+    puntuacion += 0.25 * len(
+        terminos_historial & terminos_texto
+    )
+
+    # Frases completas especialmente discriminantes.
     if pregunta_normalizada and pregunta_normalizada in texto:
         puntuacion += 50.0
 
@@ -334,9 +886,12 @@ def buscar_fragmentos(
     max_fragmentos: int = MAX_FRAGMENTOS,
 ) -> list[FragmentoCorpus]:
     if convocatoria_id <= 0:
-        raise ValueError("convocatoria_id debe ser mayor que cero.")
+        raise ValueError(
+            "convocatoria_id debe ser mayor que cero."
+        )
 
     pregunta_limpia = " ".join(str(pregunta or "").split())
+
     if not pregunta_limpia:
         return []
 
@@ -346,18 +901,59 @@ def buscar_fragmentos(
     articulos_explicitos = _extraer_articulos(pregunta_limpia)
     normas_explicitas = _extraer_normas(pregunta_limpia)
 
+    # Si el usuario identifica simultáneamente norma y artículo(s), esa
+    # referencia explícita prevalece sobre coincidencias léxicas generales.
+    # Sólo se aplica el filtro cuando existen candidatos que satisfacen ambas
+    # condiciones, para no convertir una referencia no encontrada en un
+    # resultado vacío artificial.
+    if articulos_explicitos and normas_explicitas:
+        corpus_explicito = []
+        for fila in corpus:
+            nombre_norma = _normalizar(
+                fila.get("nombre_norma_csv")
+                or fila.get("nombre_norma_normalizada")
+            )
+            articulo_solicitado = _normalizar(
+                fila.get("articulo_solicitado")
+            )
+            articulo_boe = _normalizar(fila.get("articulo_boe"))
+
+            coincide_norma = any(
+                norma in nombre_norma
+                for norma in normas_explicitas
+            )
+            coincide_articulo = any(
+                articulo == articulo_solicitado
+                or articulo == articulo_boe
+                for articulo in articulos_explicitos
+            )
+
+            if coincide_norma and coincide_articulo:
+                corpus_explicito.append(fila)
+
+        if corpus_explicito:
+            corpus = corpus_explicito
+        else:
+            # La combinación normativa explícita no existe en el corpus de
+            # esta convocatoria. No se sustituye por el mismo artículo de
+            # otra norma ni por otro artículo de una norma parecida.
+            return []
+
+    # Para consultas conceptuales sin artículo explícito, intentamos primero
+    # recuperación semántica. Si no obtiene una selección válida, conservamos
+    # como fallback el ranking léxico tradicional.
+    if not articulos_explicitos:
+        semanticos = _buscar_fragmentos_semanticos(
+            corpus=corpus,
+            pregunta=pregunta_limpia,
+            max_fragmentos=max_fragmentos,
+        )
+        if semanticos:
+            return semanticos
+
     puntuados: list[FragmentoCorpus] = []
 
     for fila in corpus:
-        # Si la pregunta cita a la vez una norma y un artículo, ambos deben
-        # pertenecer al mismo fragmento. No se sustituye la combinación ausente
-        # por el mismo artículo de otra norma ni por otro artículo de esa norma.
-        if articulos_explicitos and normas_explicitas:
-            if not _fila_coincide_articulo(fila, articulos_explicitos):
-                continue
-            if not _fila_coincide_norma(fila, normas_explicitas):
-                continue
-
         puntuacion = _puntuar_fragmento(
             fila=fila,
             pregunta=pregunta_limpia,
@@ -369,7 +965,9 @@ def buscar_fragmentos(
 
         puntuados.append(
             FragmentoCorpus(
-                articulo_fuente_id=int(fila["articulo_fuente_id"]),
+                articulo_fuente_id=int(
+                    fila["articulo_fuente_id"]
+                ),
                 tema_id=int(fila["tema_id"]),
                 parte=str(fila["parte"]),
                 numero_tema=int(fila["numero_tema"]),
@@ -377,11 +975,12 @@ def buscar_fragmentos(
                 nombre_norma=str(
                     fila["nombre_norma_csv"]
                     or fila["nombre_norma_normalizada"]
-                    or ""
                 ),
-                articulo_solicitado=str(fila["articulo_solicitado"] or ""),
-                articulo_boe=str(fila["articulo_boe"] or ""),
-                titulo_bloque=str(fila["titulo_bloque"] or ""),
+                articulo_solicitado=str(
+                    fila["articulo_solicitado"]
+                ),
+                articulo_boe=str(fila["articulo_boe"]),
+                titulo_bloque=str(fila["titulo_bloque"]),
                 texto=str(fila["texto"]),
                 puntuacion=puntuacion,
             )
@@ -406,7 +1005,11 @@ def buscar_fragmentos(
             continue
 
         longitud = len(fragmento.texto)
-        if seleccionados and caracteres + longitud > MAX_CARACTERES_CONTEXTO:
+
+        if (
+            seleccionados
+            and caracteres + longitud > MAX_CARACTERES_CONTEXTO
+        ):
             continue
 
         seleccionados.append(fragmento)
@@ -417,6 +1020,7 @@ def buscar_fragmentos(
             break
 
     return seleccionados
+
 
 
 def _puntuar_entrada_aplicacion(
@@ -431,22 +1035,37 @@ def _puntuar_entrada_aplicacion(
 
     titulo = _normalizar(entrada.titulo)
     palabras_clave = " ".join(
-        _normalizar(valor) for valor in entrada.palabras_clave
+        _normalizar(valor)
+        for valor in entrada.palabras_clave
     )
     texto = _normalizar(entrada.texto)
 
-    terminos_metadatos = _terminos(titulo + " " + palabras_clave)
+    terminos_metadatos = _terminos(
+        titulo + " " + palabras_clave
+    )
     terminos_texto = _terminos(texto)
 
+    coincidencias_metadatos = (
+        terminos_pregunta & terminos_metadatos
+    )
+    coincidencias_texto = terminos_pregunta & terminos_texto
+
     puntuacion = 0.0
-    puntuacion += 12.0 * len(terminos_pregunta & terminos_metadatos)
-    puntuacion += 2.0 * len(terminos_pregunta & terminos_texto)
-    puntuacion += 1.0 * len(terminos_historial & terminos_metadatos)
-    puntuacion += 0.25 * len(terminos_historial & terminos_texto)
+    puntuacion += 12.0 * len(coincidencias_metadatos)
+    puntuacion += 2.0 * len(coincidencias_texto)
+    puntuacion += 1.0 * len(
+        terminos_historial & terminos_metadatos
+    )
+    puntuacion += 0.25 * len(
+        terminos_historial & terminos_texto
+    )
 
     for expresion in entrada.palabras_clave:
         expresion_normalizada = _normalizar(expresion)
-        if expresion_normalizada and expresion_normalizada in pregunta_normalizada:
+        if (
+            expresion_normalizada
+            and expresion_normalizada in pregunta_normalizada
+        ):
             puntuacion += 35.0
 
     return puntuacion
@@ -458,6 +1077,7 @@ def buscar_fragmentos_aplicacion(
     max_fragmentos: int = MAX_FRAGMENTOS_APLICACION,
 ) -> list[FragmentoAplicacion]:
     pregunta_limpia = " ".join(str(pregunta or "").split())
+
     if not pregunta_limpia:
         return []
 
@@ -471,6 +1091,7 @@ def buscar_fragmentos_aplicacion(
             historial_usuario=historial,
         )
 
+        # Evita incorporar el manual por coincidencias demasiado débiles.
         if puntuacion < 18.0:
             continue
 
@@ -483,7 +1104,13 @@ def buscar_fragmentos_aplicacion(
             )
         )
 
-    puntuados.sort(key=lambda elemento: (-elemento.puntuacion, elemento.titulo))
+    puntuados.sort(
+        key=lambda elemento: (
+            -elemento.puntuacion,
+            elemento.titulo,
+        )
+    )
+
     return puntuados[:max_fragmentos]
 
 
@@ -509,20 +1136,30 @@ def _crear_contexto_aplicacion(
     return "\n\n".join(bloques)
 
 
-def _crear_contexto(fragmentos: list[FragmentoCorpus]) -> str:
+
+def _crear_contexto(
+    fragmentos: list[FragmentoCorpus],
+) -> str:
     bloques: list[str] = []
 
-    for indice, fragmento in enumerate(fragmentos, start=1):
+    for indice, fragmento in enumerate(
+        fragmentos,
+        start=1,
+    ):
         bloques.append(
             "\n".join(
                 [
                     f"[FUENTE {indice} — CORPUS CONVOCATORIA]",
                     (
                         f"Tema: {fragmento.parte} "
-                        f"{fragmento.numero_tema}. {fragmento.titulo_tema}"
+                        f"{fragmento.numero_tema}. "
+                        f"{fragmento.titulo_tema}"
                     ),
                     f"Norma: {fragmento.nombre_norma}",
-                    f"Artículo solicitado: {fragmento.articulo_solicitado}",
+                    (
+                        f"Artículo solicitado: "
+                        f"{fragmento.articulo_solicitado}"
+                    ),
                     f"Artículo BOE: {fragmento.articulo_boe}",
                     f"Encabezado: {fragmento.titulo_bloque}",
                     "Texto:",
@@ -543,7 +1180,9 @@ def _crear_historial(
 
     for mensaje in recientes:
         rol = mensaje.get("role")
-        contenido = " ".join(str(mensaje.get("content") or "").split())
+        contenido = " ".join(
+            str(mensaje.get("content") or "").split()
+        )
 
         if not contenido:
             continue
@@ -556,12 +1195,40 @@ def _crear_historial(
     return "\n".join(lineas)
 
 
+
+def _normalizar_formato_respuesta(respuesta: str) -> str:
+    """
+    Normaliza de forma determinista el formato visual de las respuestas.
+
+    El prompt pide evitar encabezados Markdown grandes, pero el modelo puede
+    generarlos ocasionalmente. Este postproceso convierte cualquier encabezado
+    Markdown (#, ##, ###, etc.) en un apartado breve en negrita.
+    """
+    lineas = []
+
+    for linea in str(respuesta or "").splitlines():
+        coincidencia = re.match(
+            r"^\s*#{1,6}\s+(.+?)\s*$",
+            linea,
+        )
+
+        if coincidencia:
+            titulo = coincidencia.group(1).strip()
+            linea = f"**{titulo}**"
+
+        lineas.append(linea)
+
+    return "\n".join(lineas).strip()
+
+
+
 def responder_chat_general(
     pregunta: str,
     mensajes_previos: list[dict[str, str]] | None = None,
     modelo: str = MODELO_PREDETERMINADO,
 ) -> dict[str, Any]:
     pregunta_limpia = " ".join(str(pregunta or "").split())
+
     if not pregunta_limpia:
         raise ValueError("La pregunta está vacía.")
 
@@ -604,6 +1271,7 @@ Reglas obligatorias:
         modelo=modelo,
         operacion=OPERACION_IA_GENERAL,
     ).strip()
+    respuesta = _normalizar_formato_respuesta(respuesta)
 
     return {
         "respuesta": respuesta,
@@ -630,9 +1298,12 @@ def responder_chat(
         )
 
     if modo_normalizado != "CONVOCATORIA":
-        raise ValueError("El modo debe ser CONVOCATORIA o GENERAL.")
+        raise ValueError(
+            "El modo debe ser CONVOCATORIA o GENERAL."
+        )
 
     pregunta_limpia = " ".join(str(pregunta or "").split())
+
     if not pregunta_limpia:
         raise ValueError("La pregunta está vacía.")
 
@@ -650,10 +1321,6 @@ def responder_chat(
         historial_usuario=historial_usuario,
     )
 
-    # Si la pregunta contiene una referencia normativa explícita, se prioriza
-    # exclusivamente el corpus de la convocatoria. Esto evita incorporar
-    # apartados funcionales de OpoCoach por coincidencias léxicas accidentales
-    # como "ley", "tema" o "artículo".
     tiene_referencia_normativa = bool(
         _extraer_articulos(pregunta_limpia)
         or _extraer_normas(pregunta_limpia)
@@ -669,12 +1336,27 @@ def responder_chat(
     )
 
     if not fragmentos and not fragmentos_aplicacion:
-        return {
-            "respuesta": (
+        tiene_referencia_normativa = bool(
+            _extraer_articulos(pregunta_limpia)
+            or _extraer_normas(pregunta_limpia)
+        )
+
+        if tiene_referencia_normativa:
+            respuesta_sin_fuente = (
+                "La norma o los artículos indicados no forman parte del corpus "
+                "asignado a esta convocatoria. Si desea información general "
+                "sobre esa norma, puede cambiar al modo "
+                "\"Conocimiento general de GPT\"."
+            )
+        else:
+            respuesta_sin_fuente = (
                 "No he encontrado información suficiente en el corpus "
                 "asignado a esta convocatoria ni en la base de conocimiento "
                 "de OpoCoach para responder con seguridad."
-            ),
+            )
+
+        return {
+            "respuesta": respuesta_sin_fuente,
             "fuentes": [],
             "modelo": None,
             "modo": "CONVOCATORIA",
@@ -713,21 +1395,46 @@ Puedes:
 - relacionar varias fuentes recuperadas cuando resulte necesario.
 
 Reglas obligatorias:
+- Actúa ante el usuario como un asistente especializado en el temario y en la
+  normativa de la convocatoria. No describas el mecanismo interno de recuperación
+  de información, el corpus, el RAG, los fragmentos recuperados ni limitaciones
+  técnicas internas.
 - No uses conocimiento externo.
 - No inventes contenido ausente.
-- No afirmes que una fuente dice algo que no aparece en ella.
-- Si las fuentes no bastan, indícalo expresamente.
+- No atribuyas a una norma, artículo o manual algo que no esté respaldado por el
+  contenido disponible.
+- Si la normativa disponible no permite sostener una conclusión concreta,
+  expresa la cautela en términos jurídicos y naturales. Por ejemplo:
+  "La Ley no establece específicamente...", "De estos preceptos no se desprende..."
+  o "No puede concluirse de la normativa aplicable...".
+- No digas al usuario expresiones como "tus fuentes", "las fuentes aportadas",
+  "con lo disponible", "los fragmentos", "el corpus no contiene" o equivalentes,
+  salvo que el propio usuario haya aportado expresamente documentos y pregunte
+  por ellos.
 - Si la pregunta es ajena a la convocatoria y al funcionamiento de OpoCoach,
   recházala brevemente.
 - Distingue con claridad el contenido normativo de los ejemplos explicativos.
 - No des asesoramiento jurídico para casos reales.
+- En preguntas de continuación, usa el HISTORIAL RECIENTE para conservar el
+  asunto, la norma y los conceptos ya establecidos. No repitas desde cero la
+  explicación anterior salvo que sea necesario para responder con claridad.
+- Responde primero a lo nuevo que pregunta el usuario y después añade sólo el
+  contexto previo imprescindible.
 - Responde en español.
 - Sé claro, directo y proporcionado a la pregunta.
+- Evita encabezados Markdown grandes (#, ##, ###). Si necesitas estructurar la
+  respuesta, usa apartados breves en negrita, por ejemplo:
+  **1. Obligación de resolver**
+- No abuses de listas: úsalas sólo cuando mejoren la claridad.
+- Cuando cites varios apartados de un mismo artículo, agrúpalos de forma compacta
+  y natural, por ejemplo: "art. 94.1, 94.4 y 94.5".
 - Cuando el usuario pregunte cómo realizar una acción dentro de OpoCoach,
-  responde primero con los pasos concretos indicados en las fuentes.
+  responde primero con los pasos concretos indicados en las fuentes; no te
+  limites a describir la función o el contenido del elemento.
 - Al final añade una línea breve titulada "Fuentes consultadas:". Para fuentes
-  normativas, indica norma y artículo. Para fuentes de funcionamiento, indica
-  "Manual de OpoCoach" y el nombre del apartado realmente utilizado.
+  normativas, indica norma y artículo o apartados realmente utilizados, evitando
+  repetir innecesariamente el nombre de la norma. Para fuentes de funcionamiento,
+  indica "Manual de OpoCoach" y el nombre del apartado realmente utilizado.
 """.strip()
 
     prompt = (
@@ -745,11 +1452,15 @@ Reglas obligatorias:
         modelo=modelo,
         operacion=OPERACION_IA,
     ).strip()
+    respuesta = _normalizar_formato_respuesta(respuesta)
 
     fuentes = [
         {
             "tipo": "CORPUS_CONVOCATORIA",
-            "tema": f"{fragmento.parte} {fragmento.numero_tema}",
+            "tema": (
+                f"{fragmento.parte} "
+                f"{fragmento.numero_tema}"
+            ),
             "titulo_tema": fragmento.titulo_tema,
             "norma": fragmento.nombre_norma,
             "articulo": fragmento.articulo_solicitado,
