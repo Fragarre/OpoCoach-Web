@@ -2640,13 +2640,25 @@ export default function Home() {
             </label>
             <textarea
               id="chat-pregunta"
-              rows={7}
+              rows={4}
               value={chatEntrada}
               disabled={ocupado || chatConvocatoriaId === null}
               onChange={(event) => setChatEntrada(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  if (
+                    !ocupado &&
+                    chatConvocatoriaId !== null &&
+                    chatEntrada.trim().length > 0
+                  ) {
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }
+              }}
               style={{
                 width: "100%",
-                minHeight: 150,
+                minHeight: 96,
                 resize: "vertical",
               }}
             />
