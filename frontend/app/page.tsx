@@ -1526,6 +1526,13 @@ async function descargarMaterialPdf() {
     if (pantallaPublica === "LANDING") {
       return (
         <main className="public-site">
+          <style jsx>{`
+            @media (min-width: 1100px) {
+              .public-process-five {
+                grid-template-columns: repeat(5, minmax(0, 1fr));
+              }
+            }
+          `}</style>
           <header className="public-header">
             <button
               type="button"
@@ -1541,6 +1548,7 @@ async function descargarMaterialPdf() {
               <a href="#como-funciona">Cómo funciona</a>
               <a href="#simulacros">Simulacros</a>
               <a href="#tests">Tests</a>
+              <a href="#materiales">Materiales</a>
               <a href="#precio">Precio</a>
             </nav>
 
@@ -1650,6 +1658,15 @@ async function descargarMaterialPdf() {
                   </p>
                 </div>
               </div>
+              <div className="value-step">
+                <span className="value-step-number">05</span>
+                <div>
+                  <strong>Estudia también con materiales</strong>
+                  <p>
+                    Descarga resúmenes, extractos del temario y textos completos de las normas de tu convocatoria.
+                  </p>
+                </div>
+              </div>
               <div className="value-trial">
                 <strong>Empieza sin pagar</strong>
                 <span>1 test gratuito · hasta 10 preguntas · corrección y PDFs incluidos</span>
@@ -1670,7 +1687,7 @@ async function descargarMaterialPdf() {
               </p>
             </div>
 
-            <div className="public-process">
+            <div className="public-process public-process-five">
               <article id="simulacros">
                 <span className="process-number">01</span>
                 <div className="process-content">
@@ -1720,6 +1737,44 @@ async function descargarMaterialPdf() {
                   </p>
                 </div>
               </article>
+
+              <article id="materiales-proceso">
+                <span className="process-number">05</span>
+                <div className="process-content">
+                  <span className="process-kicker">Estudia</span>
+                  <h3>Apóyate en materiales de tu convocatoria</h3>
+                  <p>
+                    Descarga resúmenes para estudiar, extractos vinculados a tu temario
+                    y el texto completo de las leyes y normas disponibles.
+                  </p>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section className="public-highlight" id="materiales">
+            <div>
+              <span className="eyebrow">Materiales de estudio</span>
+              <h2>Del entrenamiento al estudio, dentro de tu convocatoria</h2>
+              <p>
+                OpoCoach incorpora materiales preparados a partir del corpus normativo
+                de cada convocatoria para que puedas estudiar y consultar las normas
+                que realmente forman parte de tu temario.
+              </p>
+            </div>
+            <div className="highlight-stats">
+              <div>
+                <span>Resúmenes</span>
+                <strong>Material preparado para facilitar el estudio</strong>
+              </div>
+              <div>
+                <span>Extractos</span>
+                <strong>Los artículos y bloques relacionados con tu temario</strong>
+              </div>
+              <div>
+                <span>Texto completo</span>
+                <strong>Leyes y normas completas disponibles en PDF</strong>
+              </div>
             </div>
           </section>
 
@@ -1769,6 +1824,7 @@ async function descargarMaterialPdf() {
                 <li>Tests por temas y normas</li>
                 <li>Corrección y análisis acumulado</li>
                 <li>PDFs de preguntas y soluciones</li>
+                <li>Materiales de estudio: resúmenes, extractos y normas completas</li>
                 <li>Chat de apoyo de la convocatoria</li>
               </ul>
               <button
