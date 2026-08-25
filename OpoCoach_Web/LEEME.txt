@@ -1,0 +1,10 @@
+OpoCoach-Web - convocatorias activas
+
+Actualiza solo el código necesario para que las operaciones nuevas utilicen
+convocatorias activas y para que el frontend descarte una selección que ya
+no aparezca en la lista activa. Los históricos por ID se conservan.
+
+No modifica ninguna base de datos. Crea backup antes de escribir.
+
+Desde la raíz de OpoCoach-Web:
+  python <ruta>\OpoCoach_Web\instalar.py --root .

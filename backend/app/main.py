@@ -17,6 +17,7 @@ from app.subscriptions import (
 from app.postgres import comprobar_postgres
 from app.repositorio_contenidos import (
     comprobar_base,
+    convocatoria_esta_activa,
     obtener_convocatorias,
     obtener_resumen_convocatoria,
 )
@@ -333,6 +334,8 @@ def chat_api(
         # el frontend mantendrá siempre una convocatoria activa.
         if obtener_resumen_convocatoria(datos.convocatoria_id) is None:
             raise ValueError("La convocatoria no existe.")
+        if not convocatoria_esta_activa(datos.convocatoria_id):
+            raise ValueError("La convocatoria no está activa.")
 
         mensajes = [
             {

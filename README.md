@@ -258,6 +258,7 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 ```
 
 y reiniciar Uvicorn antes de repetir el Checkout.
+uvicorn app.main:app --reload
 
 Modificar/importar/auditar contenidos en Mantenimiento
                     ↓

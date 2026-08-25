@@ -499,15 +499,22 @@ export default function Home() {
         setMisSimulacros(guardados);
         setMisTests(tests);
         setEstadoSuscripcion(suscripcion);
-        if (convocatoriaSimulacroId === null && lista.length > 0) {
-          setConvocatoriaSimulacroId(lista[0].id);
-        }
-        if (convocatoriaTestId === null && lista.length > 0) {
-          setConvocatoriaTestId(lista[0].id);
-        }
-        if (chatConvocatoriaId === null && lista.length > 0) {
-          setChatConvocatoriaId(lista[0].id);
-        }
+        const primeraConvocatoriaId = lista[0]?.id ?? null;
+        setConvocatoriaSimulacroId((actual) =>
+          actual !== null && lista.some((convocatoria) => convocatoria.id === actual)
+            ? actual
+            : primeraConvocatoriaId
+        );
+        setConvocatoriaTestId((actual) =>
+          actual !== null && lista.some((convocatoria) => convocatoria.id === actual)
+            ? actual
+            : primeraConvocatoriaId
+        );
+        setChatConvocatoriaId((actual) =>
+          actual !== null && lista.some((convocatoria) => convocatoria.id === actual)
+            ? actual
+            : primeraConvocatoriaId
+        );
         setError("");
       })
       .catch((err) => {

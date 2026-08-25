@@ -7,27 +7,104 @@ from app.database import (
     obtener_origen_contenidos,
 )
 
+def _sqlite_tiene_columna_activa(con) -> bool:
+    return "activa" in {
+        str(fila["name"])
+        for fila in con.execute("PRAGMA table_info(convocatorias)").fetchall()
+    }
 
-def obtener_convocatorias() -> list[dict]:
+
+def _postgres_tiene_columna_activa(cur) -> bool:
+    cur.execute(
+        """
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'contenidos'
+          AND table_name = 'convocatorias'
+          AND column_name = 'activa'
+        """
+    )
+    return cur.fetchone() is not None
+
+
+def convocatoria_esta_activa(convocatoria_id: int) -> bool:
+    """
+    Indica si la convocatoria admite operaciones nuevas.
+
+    Durante una transición de esquema, si ``activa`` aún no existe, mantiene
+    el comportamiento histórico: toda convocatoria existente se considera activa.
+    """
     origen = obtener_origen_contenidos()
 
     if origen == ORIGEN_CONTENIDOS_POSTGRES:
         with conectar_contenidos_postgres() as con:
             with con.cursor() as cur:
+                if _postgres_tiene_columna_activa(cur):
+                    cur.execute(
+                        """
+                        SELECT activa
+                        FROM contenidos.convocatorias
+                        WHERE id = %s
+                        """,
+                        (convocatoria_id,),
+                    )
+                    fila = cur.fetchone()
+                    return fila is not None and bool(fila["activa"])
+
                 cur.execute(
-                    """
+                    "SELECT 1 AS existe FROM contenidos.convocatorias WHERE id = %s",
+                    (convocatoria_id,),
+                )
+                return cur.fetchone() is not None
+
+    with conectar_contenidos_sqlite() as con:
+        if _sqlite_tiene_columna_activa(con):
+            fila = con.execute(
+                "SELECT activa FROM convocatorias WHERE id = ?",
+                (convocatoria_id,),
+            ).fetchone()
+            return fila is not None and int(fila["activa"] or 0) == 1
+
+        fila = con.execute(
+            "SELECT 1 FROM convocatorias WHERE id = ?",
+            (convocatoria_id,),
+        ).fetchone()
+        return fila is not None
+
+
+def obtener_convocatorias() -> list[dict]:
+    """Devuelve únicamente convocatorias disponibles para trabajo actual."""
+    origen = obtener_origen_contenidos()
+
+    if origen == ORIGEN_CONTENIDOS_POSTGRES:
+        with conectar_contenidos_postgres() as con:
+            with con.cursor() as cur:
+                filtro = (
+                    "WHERE COALESCE(activa, TRUE) = TRUE"
+                    if _postgres_tiene_columna_activa(cur)
+                    else ""
+                )
+                cur.execute(
+                    f"""
                     SELECT id, puesto, numero, anio, codigo
                     FROM contenidos.convocatorias
+                    {filtro}
                     ORDER BY anio DESC, numero, puesto
                     """
                 )
                 return [dict(fila) for fila in cur.fetchall()]
 
     with conectar_contenidos_sqlite() as con:
+        filtro = (
+            "WHERE COALESCE(activa, 1) = 1"
+            if _sqlite_tiene_columna_activa(con)
+            else ""
+        )
         filas = con.execute(
-            """
+            f"""
             SELECT id, puesto, numero, anio, codigo
             FROM convocatorias
+            {filtro}
             ORDER BY anio DESC, numero, puesto
             """
         ).fetchall()

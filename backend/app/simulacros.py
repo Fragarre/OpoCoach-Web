@@ -18,6 +18,7 @@ from app.database import (
     obtener_origen_contenidos,
 )
 from app.postgres import conectar_postgres
+from app.repositorio_contenidos import convocatoria_esta_activa
 
 ORIGENES_VALIDOS = {"A1", "A2", "C1", "C2"}
 FUENTES_VALIDAS = {"REAL", "IA"}
@@ -121,6 +122,9 @@ def obtener_disponibilidad(
     origenes: list[str],
     fuentes: list[str] | None,
 ) -> list[dict]:
+    if not convocatoria_esta_activa(convocatoria_id):
+        raise ValueError("La convocatoria no está activa.")
+
     origenes_n = _normalizar_origenes(origenes)
     fuentes_n = _normalizar_fuentes(fuentes)
     marcas = ", ".join("?" for _ in origenes_n)
@@ -572,6 +576,9 @@ def crear_simulacro(
     fuentes: list[str] | None,
     user_id: UUID,
 ) -> int:
+    if not convocatoria_esta_activa(convocatoria_id):
+        raise ValueError("La convocatoria no está activa.")
+
     origenes_n = _normalizar_origenes(origenes)
     fuentes_n = _normalizar_fuentes(fuentes)
     marcas = ", ".join("?" for _ in origenes_n)

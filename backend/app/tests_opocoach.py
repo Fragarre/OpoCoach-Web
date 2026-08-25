@@ -14,6 +14,7 @@ from app.database import (
     obtener_origen_contenidos,
 )
 from app.postgres import conectar_postgres
+from app.repositorio_contenidos import convocatoria_esta_activa
 from app.simulacros import (
     _condicion_fuente,
     _normalizar_fuentes,
@@ -84,6 +85,9 @@ def obtener_puntos_temario_test(
     convocatoria_id: int,
     fuentes: list[str] | None,
 ) -> list[dict]:
+    if not convocatoria_esta_activa(convocatoria_id):
+        raise ValueError("La convocatoria no está activa.")
+
     fuentes_n = _normalizar_fuentes(fuentes)
     condicion = _condicion_fuente(fuentes_n)
 
@@ -133,6 +137,9 @@ def obtener_normas_test(
     convocatoria_id: int,
     fuentes: list[str] | None,
 ) -> list[dict]:
+    if not convocatoria_esta_activa(convocatoria_id):
+        raise ValueError("La convocatoria no está activa.")
+
     fuentes_n = _normalizar_fuentes(fuentes)
     condicion = _condicion_fuente(fuentes_n)
 
@@ -438,6 +445,9 @@ def crear_test(
     user_id: UUID,
     es_prueba_gratuita: bool = False,
 ) -> dict:
+    if not convocatoria_esta_activa(convocatoria_id):
+        raise ValueError("La convocatoria no está activa.")
+
     if numero_preguntas <= 0:
         raise ValueError("El número de preguntas debe ser mayor que cero.")
 

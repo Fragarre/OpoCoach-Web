@@ -189,15 +189,88 @@ def _obtener_corpus_convocatoria(
     Corpus completo del Chat para una convocatoria.
 
     Si una norma aparece en el temario mediante una referencia COMPLETADA con
-    norma_id, el Chat recibe todos los artículos disponibles de la fuente
-    principal de esa norma. Las referencias legacy sin norma_id conservan el
-    comportamiento anterior.
+    norma_id y el catálogo dispone de id_fuente_canonica, el Chat recibe todos
+    los artículos disponibles de esa fuente completa.
+
+    Compatibilidad hacia atrás:
+    - si id_fuente_canonica no existe todavía en el origen de contenidos,
+      conserva exactamente la selección histórica de fuente principal;
+    - las referencias legacy sin norma_id conservan el comportamiento anterior.
 
     Sólo lectura. No afecta a bancos ni a reglas de simulacros/tests.
     """
     origen = obtener_origen_contenidos()
 
-    sql_base = """
+    sql_canonico = """
+        WITH referencias_norma AS (
+            SELECT DISTINCT
+                tt.id AS tema_id,
+                tt.parte,
+                tt.numero_tema,
+                tt.titulo AS titulo_tema,
+                tr.norma_id,
+                tr.nombre_norma_csv,
+                tr.nombre_norma_normalizada,
+                n.id_fuente_canonica
+            FROM {schema}temarios t
+            JOIN {schema}temario_temas tt ON tt.temario_id = t.id
+            JOIN {schema}temario_referencias tr ON tr.tema_id = tt.id
+            JOIN {schema}normas n ON n.id = tr.norma_id
+            WHERE t.convocatoria_id = {param}
+              AND tr.estado = 'COMPLETADO'
+              AND tr.norma_id IS NOT NULL
+              AND n.id_fuente_canonica IS NOT NULL
+              AND TRIM(n.id_fuente_canonica) <> ''
+        ),
+        corpus_ampliado AS (
+            SELECT DISTINCT
+                af.id AS articulo_fuente_id,
+                rn.tema_id,
+                rn.parte,
+                rn.numero_tema,
+                rn.titulo_tema,
+                rn.nombre_norma_csv,
+                rn.nombre_norma_normalizada,
+                af.articulo_boe AS articulo_solicitado,
+                af.articulo_boe,
+                af.titulo_bloque,
+                af.texto
+            FROM referencias_norma rn
+            JOIN {schema}articulos_fuente af
+              ON af.id_boe = rn.id_fuente_canonica
+            WHERE af.texto IS NOT NULL
+              AND TRIM(af.texto) <> ''
+        ),
+        corpus_legacy AS (
+            SELECT DISTINCT
+                af.id AS articulo_fuente_id,
+                tt.id AS tema_id,
+                tt.parte,
+                tt.numero_tema,
+                tt.titulo AS titulo_tema,
+                tr.nombre_norma_csv,
+                tr.nombre_norma_normalizada,
+                tr.articulo_solicitado,
+                af.articulo_boe,
+                af.titulo_bloque,
+                af.texto
+            FROM {schema}temarios t
+            JOIN {schema}temario_temas tt ON tt.temario_id = t.id
+            JOIN {schema}temario_referencias tr ON tr.tema_id = tt.id
+            JOIN {schema}articulos_fuente af ON af.id = tr.articulo_fuente_id
+            WHERE t.convocatoria_id = {param}
+              AND tr.estado = 'COMPLETADO'
+              AND tr.norma_id IS NULL
+              AND af.texto IS NOT NULL
+              AND TRIM(af.texto) <> ''
+        )
+        SELECT * FROM corpus_ampliado
+        UNION
+        SELECT * FROM corpus_legacy
+        ORDER BY parte, numero_tema, nombre_norma_csv, articulo_solicitado
+    """
+
+    sql_legacy = """
         WITH fuentes_candidatas AS (
             SELECT
                 tr.norma_id,
@@ -300,22 +373,58 @@ def _obtener_corpus_convocatoria(
         ORDER BY parte, numero_tema, nombre_norma_csv, articulo_solicitado
     """
 
-    parametros = (
+    parametros_canonico = (
+        convocatoria_id,
+        convocatoria_id,
+    )
+    parametros_legacy = (
         convocatoria_id,
         convocatoria_id,
         convocatoria_id,
     )
 
     if origen == ORIGEN_CONTENIDOS_POSTGRES:
-        sql = sql_base.format(schema="contenidos.", param="%s")
         with conectar_contenidos_postgres() as con:
             with con.cursor() as cur:
-                cur.execute(sql, parametros)
+                cur.execute(
+                    """
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'contenidos'
+                      AND table_name = 'normas'
+                      AND column_name = 'id_fuente_canonica'
+                    """
+                )
+                tiene_fuente_canonica = cur.fetchone() is not None
+
+                if tiene_fuente_canonica:
+                    sql = sql_canonico.format(
+                        schema="contenidos.",
+                        param="%s",
+                    )
+                    cur.execute(sql, parametros_canonico)
+                else:
+                    sql = sql_legacy.format(
+                        schema="contenidos.",
+                        param="%s",
+                    )
+                    cur.execute(sql, parametros_legacy)
+
                 return [dict(fila) for fila in cur.fetchall()]
 
-    sql = sql_base.format(schema="", param="?")
     with conectar_contenidos_sqlite() as con:
-        filas = con.execute(sql, parametros).fetchall()
+        columnas_normas = {
+            str(fila["name"])
+            for fila in con.execute("PRAGMA table_info(normas)")
+        }
+        tiene_fuente_canonica = "id_fuente_canonica" in columnas_normas
+
+        if tiene_fuente_canonica:
+            sql = sql_canonico.format(schema="", param="?")
+            filas = con.execute(sql, parametros_canonico).fetchall()
+        else:
+            sql = sql_legacy.format(schema="", param="?")
+            filas = con.execute(sql, parametros_legacy).fetchall()
 
     return [dict(fila) for fila in filas]
 
@@ -1344,9 +1453,10 @@ def responder_chat(
         if tiene_referencia_normativa:
             respuesta_sin_fuente = (
                 "La norma o los artículos indicados no forman parte del corpus "
-                "asignado a esta convocatoria. Si desea información general "
-                "sobre esa norma, puede cambiar al modo "
-                "\"Conocimiento general de GPT\"."
+                "asignado a esta convocatoria. Compruebe que ha seleccionado "
+                "la convocatoria correcta para la consulta que desea realizar. "
+                "Si busca información general sobre esa norma, puede cambiar "
+                "al modo \"Conocimiento general de GPT\"."
             )
         else:
             respuesta_sin_fuente = (
