@@ -7,6 +7,15 @@ from app.analisis_rendimiento import generar_analisis_rendimiento
 from app.chat_convocatoria import responder_chat
 from app.pdf_examen import generar_pdf_preguntas
 from app.pdf_soluciones import generar_pdf_soluciones
+
+from app.materiales import (
+    listar_normas_materiales,
+    obtener_articulos_extracto,
+    obtener_articulos_texto_completo,
+    obtener_convocatoria_materiales,
+    obtener_resumen_preparado,
+)
+from app.pdf_materiales import generar_pdf_material
 from app.auth import UsuarioAutenticado, usuario_actual
 from app.billing import crear_checkout_suscripcion, crear_portal_cliente
 from app.subscriptions import (
@@ -17,7 +26,6 @@ from app.subscriptions import (
 from app.postgres import comprobar_postgres
 from app.repositorio_contenidos import (
     comprobar_base,
-    convocatoria_esta_activa,
     obtener_convocatorias,
     obtener_resumen_convocatoria,
 )
@@ -334,8 +342,6 @@ def chat_api(
         # el frontend mantendrá siempre una convocatoria activa.
         if obtener_resumen_convocatoria(datos.convocatoria_id) is None:
             raise ValueError("La convocatoria no existe.")
-        if not convocatoria_esta_activa(datos.convocatoria_id):
-            raise ValueError("La convocatoria no está activa.")
 
         mensajes = [
             {
@@ -358,6 +364,98 @@ def chat_api(
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+
+
+
+@app.get("/api/v1/convocatorias/{convocatoria_id}/materiales/normas")
+def materiales_normas_api(
+    convocatoria_id: int,
+    usuario: UsuarioAutenticado = Depends(usuario_actual),
+) -> list[dict]:
+    try:
+        _exigir_suscripcion_activa(usuario.id)
+
+        convocatoria = obtener_convocatoria_materiales(convocatoria_id)
+        if convocatoria is None:
+            raise ValueError("La convocatoria no existe.")
+        if not bool(convocatoria.get("activa")):
+            raise ValueError("La convocatoria no está activa.")
+
+        return listar_normas_materiales(convocatoria_id)
+
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get(
+    "/api/v1/convocatorias/{convocatoria_id}/materiales/"
+    "normas/{norma_id}/pdf"
+)
+def materiales_pdf_api(
+    convocatoria_id: int,
+    norma_id: int,
+    tipo: str = Query(default="resumen"),
+    usuario: UsuarioAutenticado = Depends(usuario_actual),
+) -> dict:
+    try:
+        _exigir_suscripcion_activa(usuario.id)
+
+        convocatoria = obtener_convocatoria_materiales(convocatoria_id)
+        if convocatoria is None:
+            raise ValueError("La convocatoria no existe.")
+        if not bool(convocatoria.get("activa")):
+            raise ValueError("La convocatoria no está activa.")
+
+        tipo_normalizado = str(tipo or "").strip().lower()
+
+        if tipo_normalizado == "resumen":
+            filename, contenido = obtener_resumen_preparado(
+                convocatoria_id,
+                norma_id,
+            )
+
+        elif tipo_normalizado == "extracto":
+            meta, articulos = obtener_articulos_extracto(
+                convocatoria_id,
+                norma_id,
+            )
+            filename, contenido = generar_pdf_material(
+                convocatoria_codigo=str(convocatoria["codigo"]),
+                convocatoria_puesto=str(convocatoria["puesto"]),
+                norma_nombre=str(meta["nombre_canonico"]),
+                tipo_material="Extracto para esta oposición",
+                articulos=articulos,
+                sufijo="extracto",
+            )
+
+        elif tipo_normalizado == "completo":
+            meta, articulos = obtener_articulos_texto_completo(
+                convocatoria_id,
+                norma_id,
+            )
+            filename, contenido = generar_pdf_material(
+                convocatoria_codigo=str(convocatoria["codigo"]),
+                convocatoria_puesto=str(convocatoria["puesto"]),
+                norma_nombre=str(meta["nombre_canonico"]),
+                tipo_material="Ley completa",
+                articulos=articulos,
+                sufijo="completa",
+            )
+
+        else:
+            raise ValueError("Tipo de material no válido.")
+
+        return {
+            "filename": filename,
+            "content_base64": base64.b64encode(contenido).decode("ascii"),
+        }
+
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.get(

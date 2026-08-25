@@ -165,6 +165,14 @@ type NormaTest = {
   disponibles: number;
 };
 
+
+type NormaMaterial = {
+  norma_id: number;
+  nombre_canonico: string;
+  id_fuente: string;
+  articulos_corpus: number;
+};
+
 type TestCreado = {
   id: number;
   numero: number;
@@ -365,7 +373,7 @@ export default function Home() {
   const [convocatorias, setConvocatorias] = useState<Convocatoria[]>([]);
   const [misSimulacros, setMisSimulacros] = useState<SimulacroListado[]>([]);
   const [misTests, setMisTests] = useState<SimulacroListado[]>([]);
-  const [seccion, setSeccion] = useState<"INICIO" | "SIMULACROS" | "TESTS" | "CHAT">("INICIO");
+  const [seccion, setSeccion] = useState<"INICIO" | "SIMULACROS" | "TESTS" | "CHAT" | "MATERIALES">("INICIO");
   const [tipoActivo, setTipoActivo] = useState<"SIMULACRO" | "TEST" | null>(null);
   const [convocatoriaSimulacroId, setConvocatoriaSimulacroId] = useState<number | null>(null);
   const [convocatoriaTestId, setConvocatoriaTestId] = useState<number | null>(null);
@@ -413,6 +421,13 @@ export default function Home() {
   const [chatHistoriales, setChatHistoriales] = useState<
     Record<string, ChatMensaje[]>
   >({});
+
+const [materialConvocatoriaId, setMaterialConvocatoriaId] = useState<number | null>(null);
+const [normasMateriales, setNormasMateriales] = useState<NormaMaterial[]>([]);
+const [materialNormaId, setMaterialNormaId] = useState<number | null>(null);
+const [materialTipo, setMaterialTipo] = useState<
+  "resumen" | "extracto" | "completo"
+>("resumen");
 
   const modoHistoricoPostBaja = Boolean(
     estadoSuscripcion &&
@@ -499,22 +514,18 @@ export default function Home() {
         setMisSimulacros(guardados);
         setMisTests(tests);
         setEstadoSuscripcion(suscripcion);
-        const primeraConvocatoriaId = lista[0]?.id ?? null;
-        setConvocatoriaSimulacroId((actual) =>
-          actual !== null && lista.some((convocatoria) => convocatoria.id === actual)
-            ? actual
-            : primeraConvocatoriaId
-        );
-        setConvocatoriaTestId((actual) =>
-          actual !== null && lista.some((convocatoria) => convocatoria.id === actual)
-            ? actual
-            : primeraConvocatoriaId
-        );
-        setChatConvocatoriaId((actual) =>
-          actual !== null && lista.some((convocatoria) => convocatoria.id === actual)
-            ? actual
-            : primeraConvocatoriaId
-        );
+        if (convocatoriaSimulacroId === null && lista.length > 0) {
+          setConvocatoriaSimulacroId(lista[0].id);
+        }
+        if (convocatoriaTestId === null && lista.length > 0) {
+          setConvocatoriaTestId(lista[0].id);
+        }
+        if (chatConvocatoriaId === null && lista.length > 0) {
+          setChatConvocatoriaId(lista[0].id);
+        }
+        if (materialConvocatoriaId === null && lista.length > 0) {
+          setMaterialConvocatoriaId(lista[0].id);
+        }
         setError("");
       })
       .catch((err) => {
@@ -559,6 +570,42 @@ export default function Home() {
         setError(err instanceof Error ? err.message : String(err));
       });
   }, [session, convocatoriaTestId]);
+
+
+useEffect(() => {
+  if (
+    !session ||
+    materialConvocatoriaId === null ||
+    modoHistoricoPostBaja
+  ) {
+    setNormasMateriales([]);
+    setMaterialNormaId(null);
+    return;
+  }
+
+  apiFetch<NormaMaterial[]>(
+    `api/v1/convocatorias/${materialConvocatoriaId}/materiales/normas`
+  )
+    .then((normas) => {
+      setNormasMateriales(normas);
+      setMaterialNormaId((actual) => {
+        if (
+          actual !== null &&
+          normas.some((norma) => norma.norma_id === actual)
+        ) {
+          return actual;
+        }
+        return normas.length > 0 ? normas[0].norma_id : null;
+      });
+      setError("");
+    })
+    .catch((err) => {
+      setNormasMateriales([]);
+      setMaterialNormaId(null);
+      setError(err instanceof Error ? err.message : String(err));
+    });
+}, [session, materialConvocatoriaId, modoHistoricoPostBaja]);
+
 
   function limpiarSimulacro() {
     setPreguntas([]);
@@ -785,6 +832,52 @@ export default function Home() {
       ? cache
       : null;
   }
+
+
+function descargarPdfGenerado(pdf: PdfGenerado) {
+  const binario = atob(pdf.content_base64);
+  const bytes = new Uint8Array(binario.length);
+
+  for (let i = 0; i < binario.length; i += 1) {
+    bytes[i] = binario.charCodeAt(i);
+  }
+
+  const blob = new Blob([bytes], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement("a");
+
+  enlace.href = url;
+  enlace.download = pdf.filename;
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+
+async function descargarMaterialPdf() {
+  if (materialConvocatoriaId === null || materialNormaId === null) return;
+
+  setOcupado(true);
+  setAccionEnCurso("Preparando material de estudio...");
+  setError("");
+  setMensaje("");
+
+  try {
+    const pdf = await apiFetch<PdfGenerado>(
+      `api/v1/convocatorias/${materialConvocatoriaId}/materiales/normas/${materialNormaId}/pdf?tipo=${materialTipo}`
+    );
+    descargarPdfGenerado(pdf);
+    setMensaje("Material de estudio descargado.");
+  } catch (err) {
+    setError(err instanceof Error ? err.message : String(err));
+  } finally {
+    setOcupado(false);
+    setAccionEnCurso(null);
+  }
+}
+
 
   async function descargarPdfSoluciones() {
     if (simulacroId === null) return;
@@ -1881,6 +1974,13 @@ export default function Home() {
               >
                 Chat
               </button>
+              <button
+                type="button"
+                className={seccion === "MATERIALES" ? "nav-link active" : "nav-link"}
+                onClick={() => setSeccion("MATERIALES")}
+              >
+                Materiales
+              </button>
             </nav>
 
             <div className="account-area">
@@ -2691,6 +2791,128 @@ export default function Home() {
           )}
         </section>
       )}
+
+
+{simulacroId === null && seccion === "MATERIALES" && (
+  <section className="card">
+    <h2>Materiales de estudio</h2>
+
+    {modoHistoricoPostBaja ? (
+      <div className="working">
+        Los materiales de estudio requieren una suscripción activa.
+      </div>
+    ) : (
+      <>
+        <p className="muted">
+          Selecciona una convocatoria, una norma y el material que quieres
+          descargar.
+        </p>
+
+        <label htmlFor="material-convocatoria">Convocatoria</label>
+        <select
+          id="material-convocatoria"
+          className="select"
+          value={materialConvocatoriaId ?? ""}
+          onChange={(event) => {
+            const valor = Number(event.target.value);
+            setMaterialConvocatoriaId(
+              Number.isFinite(valor) ? valor : null
+            );
+            setMaterialNormaId(null);
+            setError("");
+            setMensaje("");
+          }}
+        >
+          {convocatorias.map((convocatoria) => (
+            <option key={convocatoria.id} value={convocatoria.id}>
+              {convocatoria.codigo} — {convocatoria.puesto}
+            </option>
+          ))}
+        </select>
+
+        <div style={{ marginTop: 18 }}>
+          <label htmlFor="material-norma">Ley / norma</label>
+          <select
+            id="material-norma"
+            className="select"
+            value={materialNormaId ?? ""}
+            disabled={normasMateriales.length === 0}
+            onChange={(event) => {
+              const valor = Number(event.target.value);
+              setMaterialNormaId(
+                Number.isFinite(valor) ? valor : null
+              );
+              setError("");
+              setMensaje("");
+            }}
+          >
+            {normasMateriales.map((norma) => (
+              <option key={norma.norma_id} value={norma.norma_id}>
+                {norma.nombre_canonico}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ marginTop: 18 }}>
+          <label>¿Qué quieres descargar?</label>
+
+          <label style={{ display: "block", marginTop: 10 }}>
+            <input
+              type="radio"
+              name="material-tipo"
+              value="resumen"
+              checked={materialTipo === "resumen"}
+              onChange={() => setMaterialTipo("resumen")}
+            />{" "}
+            Resumen para estudiar
+          </label>
+
+          <label style={{ display: "block", marginTop: 8 }}>
+            <input
+              type="radio"
+              name="material-tipo"
+              value="extracto"
+              checked={materialTipo === "extracto"}
+              onChange={() => setMaterialTipo("extracto")}
+            />{" "}
+            Extracto para esta oposición
+          </label>
+
+          <label style={{ display: "block", marginTop: 8 }}>
+            <input
+              type="radio"
+              name="material-tipo"
+              value="completo"
+              checked={materialTipo === "completo"}
+              onChange={() => setMaterialTipo("completo")}
+            />{" "}
+            Ley completa
+          </label>
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <button
+            type="button"
+            className="primary"
+            disabled={
+              ocupado ||
+              materialConvocatoriaId === null ||
+              materialNormaId === null
+            }
+            onClick={descargarMaterialPdf}
+          >
+            {ocupado &&
+            accionEnCurso === "Preparando material de estudio..."
+              ? "Preparando PDF..."
+              : "Descargar PDF"}
+          </button>
+        </div>
+      </>
+    )}
+  </section>
+)}
+
 
       {simulacroId === null &&
         seccion === "SIMULACROS" &&
