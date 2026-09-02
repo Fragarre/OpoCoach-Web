@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OpoCoach",
-  description: "Simulacros, tests y análisis para preparar tu oposición",
+  title: "NetReto | Oposiciones para la Administración Pública de la Comunidad Valenciana",
+  description: "NetReto: simulacros, tests, análisis y materiales para preparar oposiciones para la Administración Pública de la Comunidad Valenciana.",
 };
 
 export default function RootLayout({

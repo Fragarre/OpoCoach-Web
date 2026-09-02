@@ -676,6 +676,27 @@ button:not(:disabled):active {
   letter-spacing: -0.03em;
 }
 
+.brand-copy {
+  display: inline-grid;
+  justify-items: start;
+  line-height: 1;
+}
+
+.brand-name {
+  font-size: 1.18rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.brand-byline {
+  margin-top: 4px;
+  color: #68758b;
+  font-size: .62rem;
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
 .brand-mark {
   display: grid;
   place-items: center;
@@ -1395,6 +1416,32 @@ button:not(:disabled):active {
   color: #5b6880;
   font-size: 1.12rem;
   line-height: 1.7;
+}
+
+.public-gva-focus {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 720px;
+  margin-top: 18px;
+  padding: 10px 14px;
+  border: 1px solid #d6e3f6;
+  border-radius: 12px;
+  background: rgba(248, 251, 255, .82);
+  color: #53617a;
+  font-size: .92rem;
+  line-height: 1.45;
+}
+
+.public-gva-focus img {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 42px;
+  object-fit: contain;
+}
+
+.public-gva-focus strong {
+  color: var(--brand);
 }
 
 .public-hero-actions {
@@ -2186,5 +2233,17 @@ button:not(:disabled):active {
     left: 12px;
     min-width: 0;
     text-align: center;
+  }
+}
+
+/* Alinear verticalmente las dos columnas principales del hero */
+.hero-left {
+  transform: translateY(-70px);
+}
+
+/* Alinear la columna izquierda del hero con el panel derecho */
+@media (min-width: 900px) {
+  .public-hero-copy {
+    transform: translateY(-100px);
   }
 }

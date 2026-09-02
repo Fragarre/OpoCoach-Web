@@ -3,16 +3,11 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 backend/.env
-.env
+backend/.env.example
+frontend/.env.local.example
 frontend/.env.local
 frontend/.next/
 frontend/node_modules/
-# Copias ZIP locales
-backend/*.zip
-frontend/*.zip
-
-# Base local de pruebas
-backend/data/usuario_pruebas.sqlite3
 
 # Credenciales locales de pruebas E2E
 .env.e2e

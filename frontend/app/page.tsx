@@ -1538,10 +1538,13 @@ async function descargarMaterialPdf() {
               type="button"
               className="brand public-brand"
               onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-              aria-label="OpoCoach"
+              aria-label="NetReto"
             >
-              <span className="brand-mark">O</span>
-              <span>OpoCoach</span>
+              <span className="brand-mark" aria-hidden="true">N</span>
+              <span className="brand-copy">
+                <span className="brand-name">NetReto</span>
+                <span className="brand-byline">by netexamenes.com</span>
+              </span>
             </button>
 
             <nav className="public-nav" aria-label="Navegación pública">
@@ -1583,10 +1586,15 @@ async function descargarMaterialPdf() {
               <span className="public-kicker">Preparación inteligente de oposiciones</span>
               <h1>Entrena como te examinan. Corrige como necesitas aprender.</h1>
               <p>
-                OpoCoach combina simulacros, tests dirigidos y análisis de tus
+                NetReto combina simulacros, tests dirigidos y análisis de tus
                 respuestas para que practiques con criterio y detectes dónde
                 necesitas reforzar.
               </p>
+
+              <div className="public-gva-focus" aria-label="Ámbito de NetReto">
+                <img src="/logo-gva.png" alt="" aria-hidden="true" />
+                <span>Oposiciones para la <strong>Administración Pública de la Comunidad Valenciana</strong>.</span>
+              </div>
 
               <div className="public-hero-actions">
                 <button
@@ -1620,7 +1628,7 @@ async function descargarMaterialPdf() {
               </div>
             </div>
 
-            <div className="public-value-panel" aria-label="Qué ofrece OpoCoach">
+            <div className="public-value-panel" aria-label="Qué ofrece NetReto">
               <span className="eyebrow">Todo tu entrenamiento en un solo lugar</span>
               <div className="value-step">
                 <span className="value-step-number">01</span>
@@ -1681,7 +1689,7 @@ async function descargarMaterialPdf() {
                 <h2>De practicar preguntas a entender cómo estás preparando el examen</h2>
               </div>
               <p>
-                OpoCoach acompaña todo el ciclo de entrenamiento: eliges qué
+                NetReto acompaña todo el ciclo de entrenamiento: eliges qué
                 practicar, respondes, corriges y utilizas lo aprendido para decidir
                 dónde concentrar el siguiente esfuerzo.
               </p>
@@ -1757,7 +1765,7 @@ async function descargarMaterialPdf() {
               <span className="eyebrow">Materiales de estudio</span>
               <h2>Del entrenamiento al estudio, dentro de tu convocatoria</h2>
               <p>
-                OpoCoach incorpora materiales preparados a partir del corpus normativo
+                NetReto incorpora materiales preparados a partir del corpus normativo
                 de cada convocatoria para que puedas estudiar y consultar las normas
                 que realmente forman parte de tu temario.
               </p>
@@ -1783,7 +1791,7 @@ async function descargarMaterialPdf() {
               <span className="eyebrow">No sólo una nota</span>
               <h2>Entiende también cómo estás respondiendo</h2>
               <p>
-                OpoCoach conserva tus resultados y te permite revisar el
+                NetReto conserva tus resultados y te permite revisar el
                 rendimiento acumulado por temas, normas y nivel de seguridad.
               </p>
             </div>
@@ -1806,7 +1814,7 @@ async function descargarMaterialPdf() {
           <section className="public-pricing" id="precio">
             <div>
               <span className="eyebrow">Precio sencillo</span>
-              <h2>Prueba OpoCoach antes de suscribirte</h2>
+              <h2>Prueba NetReto antes de suscribirte</h2>
               <p>
                 Empieza con un test gratuito de hasta 10 preguntas. Si te resulta
                 útil, activa el acceso completo.
@@ -1814,7 +1822,7 @@ async function descargarMaterialPdf() {
             </div>
 
             <div className="pricing-card">
-              <span className="pricing-name">OpoCoach</span>
+              <span className="pricing-name">NetReto</span>
               <div className="pricing-price">
                 <strong>10 €</strong>
                 <span>/ mes</span>
@@ -1847,7 +1855,7 @@ async function descargarMaterialPdf() {
           <section className="public-final-cta">
             <div>
               <span className="eyebrow">Empieza ahora</span>
-              <h2>Haz tu primer test y comprueba cómo trabaja OpoCoach.</h2>
+              <h2>Haz tu primer test y comprueba cómo trabaja NetReto.</h2>
             </div>
             <button
               type="button"
@@ -1863,8 +1871,8 @@ async function descargarMaterialPdf() {
           </section>
 
           <footer className="public-footer">
-            <strong>OpoCoach</strong>
-            <span>Preparación de oposiciones</span>
+            <strong>NetReto</strong>
+            <span>Oposiciones para la Administración Pública de la Comunidad Valenciana</span>
           </footer>
         </main>
       );
@@ -1883,7 +1891,7 @@ async function descargarMaterialPdf() {
             setPantallaPublica("LANDING");
           }}
         >
-          ← Volver a OpoCoach
+          ← Volver a NetReto
         </button>
 
         <section className="auth-layout">
@@ -1893,8 +1901,11 @@ async function descargarMaterialPdf() {
               className="brand auth-brand"
               onClick={() => setPantallaPublica("LANDING")}
             >
-              <span className="brand-mark">O</span>
-              <span>OpoCoach</span>
+              <span className="brand-mark" aria-hidden="true">N</span>
+              <span className="brand-copy">
+                <span className="brand-name">NetReto</span>
+                <span className="brand-byline">by netexamenes.com</span>
+              </span>
             </button>
 
             <span className="public-kicker">
@@ -1922,7 +1933,7 @@ async function descargarMaterialPdf() {
             <span className="eyebrow">
               {esRegistro ? "Crear cuenta" : "Acceso"}
             </span>
-            <h2>{esRegistro ? "Prueba OpoCoach gratis" : "Iniciar sesión"}</h2>
+            <h2>{esRegistro ? "Prueba NetReto gratis" : "Iniciar sesión"}</h2>
 
             {error && <div className="error">{error}</div>}
             {mensaje && <div className="success">{mensaje}</div>}
@@ -1997,8 +2008,11 @@ async function descargarMaterialPdf() {
               onClick={() => setSeccion("INICIO")}
               aria-label="Ir al inicio"
             >
-              <span className="brand-mark">O</span>
-              <span>OpoCoach</span>
+              <span className="brand-mark" aria-hidden="true">N</span>
+              <span className="brand-copy">
+                <span className="brand-name">NetReto</span>
+                <span className="brand-byline">by netexamenes.com</span>
+              </span>
             </button>
 
             <nav className="app-nav" aria-label="Navegación principal">
@@ -2397,7 +2411,7 @@ async function descargarMaterialPdf() {
                 className="text-action"
                 onClick={() => setSeccion("CHAT")}
               >
-                Consultar OpoCoach →
+                Consultar NetReto →
               </button>
             </aside>
           </section>
@@ -2718,7 +2732,7 @@ async function descargarMaterialPdf() {
                   setMensaje("");
                 }}
               />{" "}
-              Convocatoria y OpoCoach
+              Convocatoria y NetReto
             </label>
             <label>
               <input
@@ -2739,7 +2753,7 @@ async function descargarMaterialPdf() {
           {chatModo === "CONVOCATORIA" ? (
             <div className="working" style={{ marginTop: 14 }}>
               Las respuestas se limitan al corpus de la convocatoria activa y
-              a la base de conocimiento de OpoCoach.
+              a la base de conocimiento de NetReto.
             </div>
           ) : (
             <div className="working" style={{ marginTop: 14 }}>
@@ -2776,7 +2790,7 @@ async function descargarMaterialPdf() {
                   }}
                 >
                   <strong>
-                    {mensajeChat.role === "user" ? "Tú" : "OpoCoach"}
+                    {mensajeChat.role === "user" ? "Tú" : "NetReto"}
                   </strong>
                   <div
                     style={{
@@ -2798,7 +2812,7 @@ async function descargarMaterialPdf() {
           <form onSubmit={enviarChat}>
             <label htmlFor="chat-pregunta">
               {chatModo === "CONVOCATORIA"
-                ? "Escriba una duda sobre la convocatoria o sobre OpoCoach"
+                ? "Escriba una duda sobre la convocatoria o sobre NetReto"
                 : "Escriba una pregunta de conocimiento general"}
             </label>
             <textarea
