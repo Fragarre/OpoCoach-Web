@@ -24,7 +24,7 @@ def obtener_stripe_secret_key() -> str:
     clave = _variable("STRIPE_SECRET_KEY")
     if not (clave.startswith("sk_test_") or clave.startswith("sk_live_")):
         raise RuntimeError(
-            "STRIPE_SECRET_KEY no parece una clave Stripe válida. "
+            "STRIPE_SECRET_KEY no parece una clave válida de Stripe. "
             "Debe comenzar por sk_test_ o sk_live_."
         )
     return clave
@@ -44,6 +44,7 @@ def obtener_frontend_url() -> str:
 def crear_checkout_suscripcion(
     user_id: UUID,
     email: str,
+    customer_id: str | None = None,
 ) -> CheckoutCreado:
     stripe.api_key = obtener_stripe_secret_key()
 
@@ -57,7 +58,7 @@ def crear_checkout_suscripcion(
                 "quantity": 1,
             }
         ],
-        customer_email=email,
+        **({"customer": customer_id} if customer_id else {"customer_email": email}),
         client_reference_id=str(user_id),
         metadata={
             "opocoach_user_id": str(user_id),
@@ -91,3 +92,25 @@ def obtener_stripe_webhook_secret() -> str:
             "STRIPE_WEBHOOK_SECRET no parece un secreto de firma de webhook válido."
         )
     return secreto
+
+
+@dataclass(frozen=True)
+class PortalCreado:
+    url: str
+
+
+def crear_portal_cliente(customer_id: str) -> PortalCreado:
+    stripe.api_key = obtener_stripe_secret_key()
+
+    if not customer_id:
+        raise RuntimeError("Stripe customer_id no puede estar vacío.")
+
+    session = stripe.billing_portal.Session.create(
+        customer=customer_id,
+        return_url=obtener_frontend_url(),
+    )
+
+    if not session.url:
+        raise RuntimeError("Stripe no ha devuelto una URL del portal de cliente.")
+
+    return PortalCreado(url=str(session.url))
