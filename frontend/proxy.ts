@@ -1,25 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const USERNAME = "netreto";
+const PASSWORD = "NetReto2026";
+
 export function proxy(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
 
-  if (authHeader) {
-    const [scheme, encoded] = authHeader.split(" ");
+  if (authHeader?.startsWith("Basic ")) {
+    const encoded = authHeader.substring(6);
 
-    if (scheme === "Basic" && encoded) {
-      const decoded = Buffer.from(encoded, "base64").toString("utf-8");
-      const [username, password] = decoded.split(":");
+    try {
+      const decoded = atob(encoded);
+      const separator = decoded.indexOf(":");
 
-      if (
-        username === process.env.NETRETO_GATE_USER &&
-        password === process.env.NETRETO_GATE_PASSWORD
-      ) {
-        return NextResponse.next();
+      if (separator !== -1) {
+        const username = decoded.substring(0, separator);
+        const password = decoded.substring(separator + 1);
+
+        if (username === USERNAME && password === PASSWORD) {
+          return NextResponse.next();
+        }
       }
+    } catch {
+      // Credenciales inválidas
     }
   }
 
-  return new NextResponse("Acceso restringido", {
+  return new NextResponse("Autenticación requerida", {
     status: 401,
     headers: {
       "WWW-Authenticate": 'Basic realm="NetReto"',
