@@ -366,9 +366,11 @@ export default function Home() {
   const supabase = useMemo(() => createClient(), []);
   const [session, setSession] = useState<Session | null>(null);
   const [cargandoSesion, setCargandoSesion] = useState(true);
-  const [pantallaPublica, setPantallaPublica] = useState<"LANDING" | "LOGIN" | "REGISTRO">("LANDING");
+  const [pantallaPublica, setPantallaPublica] = useState< "LANDING" | "LOGIN" | "REGISTRO" | "RECUPERAR" | "NUEVA_PASSWORD" >("LANDING");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [nuevaPassword, setNuevaPassword] = useState("");
+  const [confirmarPassword, setConfirmarPassword] = useState("");
   const [me, setMe] = useState<Me | null>(null);
   const [convocatorias, setConvocatorias] = useState<Convocatoria[]>([]);
   const [misSimulacros, setMisSimulacros] = useState<SimulacroListado[]>([]);
@@ -378,7 +380,7 @@ export default function Home() {
   const [convocatoriaSimulacroId, setConvocatoriaSimulacroId] = useState<number | null>(null);
   const [convocatoriaTestId, setConvocatoriaTestId] = useState<number | null>(null);
   const [modoTest, setModoTest] = useState<"TEMA" | "NORMA">("TEMA");
-  const [numeroPreguntasTest, setNumeroPreguntasTest] = useState(20);
+  const [numeroPreguntasTest, setNumeroPreguntasTest] = useState(10);
   const [temasTest, setTemasTest] = useState<TemaTest[]>([]);
   const [normasTest, setNormasTest] = useState<NormaTest[]>([]);
   const [temasSeleccionados, setTemasSeleccionados] = useState<number[]>([]);
@@ -461,6 +463,14 @@ const [materialTipo, setMaterialTipo] = useState<
   ).length;
   const totalCorregidas = totalPruebas - totalPendientes;
 
+  // El simulacro gratuito tiene un consumo independiente del test gratuito.
+  const simulacroGratuitoDisponible = Boolean(
+    estadoSuscripcion &&
+      !estadoSuscripcion.suscrito &&
+      estadoSuscripcion.customer_id === null &&
+      !misSimulacros.some((item) => item.es_prueba_gratuita)
+  );
+
   const inicialUsuario = (me?.email?.trim()?.[0] ?? "O").toUpperCase();
 
   useEffect(() => {
@@ -481,7 +491,13 @@ const [materialTipo, setMaterialTipo] = useState<
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setPantallaPublica("NUEVA_PASSWORD");
+        setError("");
+        setMensaje("");
+      }
+
       setSession(nextSession);
       if (!nextSession) {
         setMe(null);
@@ -575,6 +591,8 @@ const [materialTipo, setMaterialTipo] = useState<
 useEffect(() => {
   if (
     !session ||
+    !estadoSuscripcion ||
+    !estadoSuscripcion.suscrito ||
     materialConvocatoriaId === null ||
     modoHistoricoPostBaja
   ) {
@@ -1229,10 +1247,73 @@ async function descargarMaterialPdf() {
 
     if (!data.session) {
       setMensaje(
-        "Cuenta creada. Revisa tu correo electrónico si Supabase requiere confirmar la dirección antes de entrar."
+        "Cuenta creada correctamente. Te hemos enviado un correo para confirmar tu dirección. Cuando la hayas confirmado, podrás iniciar sesión."
       );
       setPantallaPublica("LOGIN");
     }
+  }
+
+  async function solicitarRecuperacion(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    setMensaje("");
+    setOcupado(true);
+    setAccionEnCurso("Enviando instrucciones...");
+
+    const { error: authError } = await supabase.auth.resetPasswordForEmail(
+      email.trim(),
+      { redirectTo: window.location.origin }
+    );
+
+    setOcupado(false);
+    setAccionEnCurso(null);
+
+    if (authError) {
+      setError("No se ha podido enviar el correo de recuperación. Inténtalo de nuevo.");
+      return;
+    }
+
+    setMensaje(
+      "Si existe una cuenta con ese correo, recibirás un enlace para restablecer la contraseña."
+    );
+  }
+
+  async function cambiarPassword(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    setMensaje("");
+
+    if (nuevaPassword.length < 6) {
+      setError("La nueva contraseña debe tener al menos 6 caracteres.");
+      return;
+    }
+
+    if (nuevaPassword !== confirmarPassword) {
+      setError("Las contraseñas no coinciden.");
+      return;
+    }
+
+    setOcupado(true);
+    setAccionEnCurso("Guardando nueva contraseña...");
+
+    const { error: authError } = await supabase.auth.updateUser({
+      password: nuevaPassword,
+    });
+
+    setOcupado(false);
+    setAccionEnCurso(null);
+
+    if (authError) {
+      setError("No se ha podido cambiar la contraseña. Solicita de nuevo el enlace de recuperación si es necesario.");
+      return;
+    }
+
+    setNuevaPassword("");
+    setConfirmarPassword("");
+    setPassword("");
+    await supabase.auth.signOut();
+    setMensaje("Contraseña cambiada correctamente. Ya puedes iniciar sesión con tu nueva contraseña.");
+    setPantallaPublica("LOGIN");
   }
 
   async function cerrarSesion() {
@@ -1312,7 +1393,7 @@ async function descargarMaterialPdf() {
       );
 
       setTipoActivo("SIMULACRO");
-      setPruebaActivaEsGratuita(false);
+      setPruebaActivaEsGratuita(!estadoSuscripcion?.suscrito);
       setSimulacroId(creado.id);
       setPreguntas(lista);
       inicializarRespuestas(lista);
@@ -1520,6 +1601,63 @@ async function descargarMaterialPdf() {
 
   if (cargandoSesion) {
     return <main className="page">Comprobando sesión...</main>;
+  }
+
+  if (session && pantallaPublica === "NUEVA_PASSWORD") {
+    return (
+      <main className="auth-shell">
+        <button
+          type="button"
+          className="auth-back"
+          onClick={() => {
+            setError("");
+            setMensaje("");
+            setNuevaPassword("");
+            setConfirmarPassword("");
+            setPantallaPublica("LANDING");
+          }}
+        >
+          ← Volver a NetReto
+        </button>
+
+        <div className="auth-card">
+          <span className="eyebrow">Restablecer contraseña</span>
+          <h2>Elige una nueva contraseña</h2>
+          <p className="muted">Introduce tu nueva contraseña y confírmala para completar el proceso.</p>
+
+          {error && <div className="error">{error}</div>}
+          {mensaje && <div className="success">{mensaje}</div>}
+
+          <form onSubmit={cambiarPassword}>
+            <label htmlFor="nueva-password">Nueva contraseña</label>
+            <input
+              id="nueva-password"
+              type="password"
+              autoComplete="new-password"
+              value={nuevaPassword}
+              onChange={(e) => setNuevaPassword(e.target.value)}
+              minLength={6}
+              required
+            />
+
+            <label htmlFor="confirmar-password">Repite la nueva contraseña</label>
+            <input
+              id="confirmar-password"
+              type="password"
+              autoComplete="new-password"
+              value={confirmarPassword}
+              onChange={(e) => setConfirmarPassword(e.target.value)}
+              minLength={6}
+              required
+            />
+
+            <button type="submit" className="primary" disabled={ocupado}>
+              {ocupado ? "Guardando..." : "Cambiar contraseña"}
+            </button>
+          </form>
+        </div>
+      </main>
+    );
   }
 
   if (!session) {
@@ -1880,6 +2018,49 @@ async function descargarMaterialPdf() {
 
     const esRegistro = pantallaPublica === "REGISTRO";
 
+    if (pantallaPublica === "RECUPERAR") {
+      return (
+        <main className="auth-shell">
+          <button
+            type="button"
+            className="auth-back"
+            onClick={() => {
+              setError("");
+              setMensaje("");
+              setPantallaPublica("LOGIN");
+            }}
+          >
+            ← Volver a iniciar sesión
+          </button>
+
+          <div className="auth-card">
+            <span className="eyebrow">Recuperar contraseña</span>
+            <h2>¿Has olvidado tu contraseña?</h2>
+            <p className="muted">Te enviaremos un enlace para crear una nueva contraseña.</p>
+
+            {error && <div className="error">{error}</div>}
+            {mensaje && <div className="success">{mensaje}</div>}
+
+            <form onSubmit={solicitarRecuperacion}>
+              <label htmlFor="email-recuperacion">Correo electrónico</label>
+              <input
+                id="email-recuperacion"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+
+              <button type="submit" className="primary" disabled={ocupado}>
+                {ocupado ? "Enviando..." : "Enviar enlace de recuperación"}
+              </button>
+            </form>
+          </div>
+        </main>
+      );
+    }
+
     return (
       <main className="auth-shell">
         <button
@@ -1975,7 +2156,23 @@ async function descargarMaterialPdf() {
               </button>
             </form>
 
-            <div className="auth-switch">
+            {!esRegistro && (
+        <div style={{ marginTop: "0.8rem", textAlign: "center" }}>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              setError("");
+              setMensaje("");
+              setPantallaPublica("RECUPERAR");
+            }}
+          >
+            ¿Has olvidado tu contraseña?
+          </button>
+        </div>
+      )}
+
+      <div className="auth-switch">
               <span>
                 {esRegistro ? "¿Ya tienes cuenta?" : "¿Todavía no tienes cuenta?"}
               </span>
@@ -2116,17 +2313,17 @@ async function descargarMaterialPdf() {
                         }`
                       : estadoSuscripcion.suscrito
                         ? "Suscripción activa"
-                        : estadoSuscripcion.prueba_gratuita_disponible
-                          ? "Prueba gratuita disponible"
-                          : "Suscripción no activa"}
+                        : (estadoSuscripcion.prueba_gratuita_disponible || simulacroGratuitoDisponible)
+                        ? "Pruebas gratuitas disponibles"
+                        : "Suscripción no activa"}
                 </strong>
                 <span>
                   {estadoSuscripcion.pago_pendiente
                     ? "Tu acceso continúa temporalmente. Revisa tu método de pago."
                     : estadoSuscripcion.cancelacion_programada
                       ? "Conservas el acceso completo hasta la fecha indicada."
-                      : estadoSuscripcion.prueba_gratuita_disponible
-                        ? "Puedes realizar un test gratuito de hasta 10 preguntas con todas sus funciones."
+                      : estadoSuscripcion.prueba_gratuita_disponible || simulacroGratuitoDisponible
+                        ? "Puedes realizar un test de hasta 10 preguntas y un simulacro completo de forma gratuita."
                         : "Activa una suscripción para crear nuevas pruebas y utilizar todas las funciones."}
                 </span>
 
@@ -3108,10 +3305,14 @@ async function descargarMaterialPdf() {
               className="number-input"
               type="number"
               min={1}
+              max={estadoSuscripcion?.suscrito ? undefined : 10}
               value={numeroPreguntasTest}
-              onChange={(e) =>
-                setNumeroPreguntasTest(Math.max(1, Number(e.target.value)))
-              }
+              onChange={(e) => {
+                const valor = Math.max(1, Number(e.target.value));
+                setNumeroPreguntasTest(
+                  estadoSuscripcion?.suscrito ? valor : Math.min(10, valor)
+                );
+              }}
             />
 
             <h3>Generar preguntas por</h3>

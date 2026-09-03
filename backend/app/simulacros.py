@@ -570,11 +570,30 @@ def _seleccionar_parte_segun_modelo(
     return resultado
 
 
+def existe_simulacro_gratuito(user_id: UUID) -> bool:
+    """Indica si la cuenta ya ha creado su único simulacro gratuito."""
+    with conectar_postgres() as con:
+        with con.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1
+                FROM public.simulacros
+                WHERE user_id = %s
+                  AND tipo_prueba = 'SIMULACRO'
+                  AND es_prueba_gratuita = TRUE
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            return cur.fetchone() is not None
+
+
 def crear_simulacro(
     convocatoria_id: int,
     origenes: list[str],
     fuentes: list[str] | None,
     user_id: UUID,
+    es_prueba_gratuita: bool = False,
 ) -> int:
     if not convocatoria_esta_activa(convocatoria_id):
         raise ValueError("La convocatoria no está activa.")
@@ -778,7 +797,7 @@ def crear_simulacro(
                 )
                 VALUES (
                     %s, %s, %s, %s, 'SIMULACRO',
-                    FALSE, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 RETURNING id
                 """,
@@ -787,6 +806,7 @@ def crear_simulacro(
                     convocatoria_id,
                     numero,
                     convocatoria["numero_preguntas"],
+                    es_prueba_gratuita,
                     convocatoria["codigo"],
                     convocatoria["puesto"],
                     convocatoria["numero"],

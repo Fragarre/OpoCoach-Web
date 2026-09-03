@@ -70,6 +70,7 @@ from app.simulacros import (
     obtener_tiempo_correccion,
     obtener_resultado_para_analisis,
     obtener_resultado_acumulado,
+    existe_simulacro_gratuito,
 )
 
 class ChatMensajeRequest(BaseModel):
@@ -469,11 +470,27 @@ def disponibilidad_simulacro(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> list[DisponibilidadParte]:
     try:
-        _exigir_suscripcion_activa(usuario.id)
+        estado = _estado_acceso(usuario.id)
+        if not estado["suscrito"]:
+            # Un usuario sin suscripción puede consultar la disponibilidad
+            # únicamente mientras conserve su simulacro gratuito.
+            # La prueba gratuita del simulacro es independiente de la del test.
+            tiene_cliente_stripe = bool(estado.get("customer_id"))
+            if tiene_cliente_stripe or existe_simulacro_gratuito(usuario.id):
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "El simulacro gratuito de esta cuenta ya ha sido utilizado. "
+                        "Activa una suscripción para crear nuevos simulacros."
+                    ),
+                )
+
         return [
             DisponibilidadParte(**x)
             for x in obtener_disponibilidad(convocatoria_id, origen, fuente)
         ]
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -621,12 +638,29 @@ def nuevo_simulacro(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> SimulacroCreado:
     try:
-        _exigir_suscripcion_activa(usuario.id)
+        estado = _estado_acceso(usuario.id)
+        es_prueba_gratuita = False
+
+        if not estado["suscrito"]:
+            # El simulacro gratuito es independiente de la prueba gratuita de
+            # los tests. Solo está disponible para una cuenta que todavía no
+            # tenga cliente Stripe y que no haya creado ya su simulacro gratuito.
+            if bool(estado.get("customer_id")) or existe_simulacro_gratuito(usuario.id):
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "El simulacro gratuito de esta cuenta ya ha sido utilizado. "
+                        "Activa una suscripción para crear nuevos simulacros."
+                    ),
+                )
+            es_prueba_gratuita = True
+
         sid = crear_simulacro(
             datos.convocatoria_id,
             datos.origenes,
             datos.fuentes,
             usuario.id,
+            es_prueba_gratuita=es_prueba_gratuita,
         )
     except HTTPException:
         raise
