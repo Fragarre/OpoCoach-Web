@@ -13,11 +13,6 @@ class CheckoutCreado:
     url: str
 
 
-@dataclass(frozen=True)
-class PortalCreado:
-    url: str
-
-
 def _variable(nombre: str) -> str:
     valor = os.getenv(nombre, "").strip()
     if not valor:
@@ -27,10 +22,10 @@ def _variable(nombre: str) -> str:
 
 def obtener_stripe_secret_key() -> str:
     clave = _variable("STRIPE_SECRET_KEY")
-    if not clave.startswith("sk_test_"):
+    if not (clave.startswith("sk_test_") or clave.startswith("sk_live_")):
         raise RuntimeError(
-            "STRIPE_SECRET_KEY no parece una clave de sandbox/test. "
-            "Durante esta fase solo se admiten claves sk_test_."
+            "STRIPE_SECRET_KEY no parece una clave Stripe válida. "
+            "Debe comenzar por sk_test_ o sk_live_."
         )
     return clave
 
@@ -49,17 +44,10 @@ def obtener_frontend_url() -> str:
 def crear_checkout_suscripcion(
     user_id: UUID,
     email: str,
-    customer_id: str | None = None,
 ) -> CheckoutCreado:
     stripe.api_key = obtener_stripe_secret_key()
 
     frontend = obtener_frontend_url()
-
-    parametros_cliente = (
-        {"customer": customer_id}
-        if customer_id
-        else {"customer_email": email}
-    )
 
     session = stripe.checkout.Session.create(
         mode="subscription",
@@ -69,7 +57,7 @@ def crear_checkout_suscripcion(
                 "quantity": 1,
             }
         ],
-        **parametros_cliente,
+        customer_email=email,
         client_reference_id=str(user_id),
         metadata={
             "opocoach_user_id": str(user_id),
@@ -103,23 +91,3 @@ def obtener_stripe_webhook_secret() -> str:
             "STRIPE_WEBHOOK_SECRET no parece un secreto de firma de webhook válido."
         )
     return secreto
-
-
-def crear_portal_cliente(customer_id: str) -> PortalCreado:
-    if not customer_id:
-        raise RuntimeError(
-            "El usuario no tiene un Customer de Stripe asociado."
-        )
-
-    stripe.api_key = obtener_stripe_secret_key()
-    frontend = obtener_frontend_url()
-
-    session = stripe.billing_portal.Session.create(
-        customer=customer_id,
-        return_url=f"{frontend}/",
-    )
-
-    if not session.url:
-        raise RuntimeError("Stripe no ha devuelto una URL del Customer Portal.")
-
-    return PortalCreado(url=str(session.url))
