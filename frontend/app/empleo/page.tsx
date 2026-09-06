@@ -33,8 +33,11 @@ type Proceso = {
 type Publicacion = { id: number; titulo: string; fecha_publicacion: string | null; url: string; tipo: string | null };
 type Cambio = { id: number; fecha: string | null; descripcion: string; url: string | null };
 
-async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(`/api/empleo/${path.replace(/^\/+/, "")}`, { cache: "no-store" });
+async function getJson<T>(path: string, accessToken: string): Promise<T> {
+  const response = await fetch(`/api/empleo/${path.replace(/^\/+/, "")}`, {
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
   const text = await response.text();
   let body: unknown = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
@@ -43,6 +46,14 @@ async function getJson<T>(path: string): Promise<T> {
     throw new Error(detail);
   }
   return body as T;
+}
+
+async function getAccessToken(supabase: ReturnType<typeof createClient>): Promise<string> {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw new Error(error.message);
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Se requiere autenticación.");
+  return token;
 }
 
 function fecha(valor: string | null) {
@@ -66,10 +77,11 @@ export default function EmpleoPage() {
   async function cargar(organismoId?: number) {
     setCargando(true); setError("");
     try {
+      const token = await getAccessToken(supabase);
       const [m, o, p] = await Promise.all([
-        getJson<Me>("me"),
-        getJson<Organismo[]>("organismos"),
-        getJson<Proceso[]>(organismoId ? `procesos?organismo_id=${organismoId}` : "procesos"),
+        getJson<Me>("me", token),
+        getJson<Organismo[]>("organismos", token),
+        getJson<Proceso[]>(organismoId ? `procesos?organismo_id=${organismoId}` : "procesos", token),
       ]);
       setMe(m); setOrganismos(o); setProcesos(p);
     } catch (e) {
@@ -77,14 +89,15 @@ export default function EmpleoPage() {
     } finally { setCargando(false); }
   }
 
-  useEffect(() => { void cargar(); }, []);
+  useEffect(() => { void cargar(); }, [supabase]);
 
   async function abrirProceso(proceso: Proceso) {
     setError(""); setDetalle(proceso);
     try {
+      const token = await getAccessToken(supabase);
       const [p, c] = await Promise.all([
-        getJson<Publicacion[]>(`procesos/${proceso.id}/publicaciones`),
-        getJson<Cambio[]>(`procesos/${proceso.id}/cambios`),
+        getJson<Publicacion[]>(`procesos/${proceso.id}/publicaciones`, token),
+        getJson<Cambio[]>(`procesos/${proceso.id}/cambios`, token),
       ]);
       setPublicaciones(p); setCambios(c);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -92,8 +105,11 @@ export default function EmpleoPage() {
 
   async function cambiarOrganismo(o: Organismo | null) {
     setSeleccion(o); setDetalle(null); setPublicaciones([]); setCambios([]);
-    try { setProcesos(await getJson<Proceso[]>(o ? `procesos?organismo_id=${o.id}` : "procesos")); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    try {
+      const token = await getAccessToken(supabase);
+      setProcesos(await getJson<Proceso[]>(o ? `procesos?organismo_id=${o.id}` : "procesos", token));
+      setError("");
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
 
   async function cerrarSesion() { await supabase.auth.signOut(); window.location.href = "/"; }
