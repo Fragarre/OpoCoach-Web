@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import EmploymentNovedadesAviso from "@/components/EmploymentNovedadesAviso";
 
 export const metadata: Metadata = {
   title: "NetReto | Oposiciones para la Administración Pública de la Comunidad Valenciana",
@@ -19,6 +20,7 @@ export default function RootLayout({
           <Link href="/empleo" style={{textDecoration:"none"}}>Empleo público</Link>
           <Link href="/empleo/seguimiento" style={{textDecoration:"none"}}>Mi seguimiento</Link>
         </nav>
+        <EmploymentNovedadesAviso />
         {children}
       </body>
     </html>
