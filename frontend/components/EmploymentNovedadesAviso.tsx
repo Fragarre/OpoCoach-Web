@@ -69,7 +69,6 @@ export default function EmploymentNovedadesAviso() {
   const [latestAt, setLatestAt] = useState<string | null>(null);
 
   useEffect(() => {
-    // El aviso se muestra al entrar en la aplicación principal, no dentro del módulo Empleo.
     if (pathname !== "/") {
       setVisible(false);
       return;
@@ -77,16 +76,13 @@ export default function EmploymentNovedadesAviso() {
 
     let cancelado = false;
 
-    async function comprobar() {
-      const { data, error } = await supabase.auth.getSession();
-      if (error || !data.session || cancelado) return;
-
+    async function comprobar(accessToken: string, userId: string) {
       try {
         const response = await fetch("/api/empleo/seguimiento/cambios?limite=100", {
           cache: "no-store",
-          headers: { Authorization: `Bearer ${data.session.access_token}` },
+          headers: { Authorization: `Bearer ${accessToken}` },
         });
-        if (!response.ok) return;
+        if (!response.ok || cancelado) return;
 
         const novedades = (await response.json()) as Novedad[];
         const utiles = novedades.filter((n) =>
@@ -100,22 +96,52 @@ export default function EmploymentNovedadesAviso() {
           return item.detectado_at > actual ? item.detectado_at : actual;
         }, null);
 
-        const key = `netreto:empleo:ultima-novedad-vista:${data.session.user.id}`;
+        const key = `netreto:empleo:ultima-novedad-vista:${userId}`;
         const vista = window.localStorage.getItem(key);
 
         if (!ultimo || !vista || ultimo > vista) {
           setCount(utiles.length);
           setLatestAt(ultimo);
           setVisible(true);
+        } else {
+          setVisible(false);
         }
       } catch {
         // El aviso nunca debe interferir con la carga normal de NetReto.
       }
     }
 
-    void comprobar();
+    async function iniciar() {
+      const { data } = await supabase.auth.getSession();
+      if (data.session && !cancelado) {
+        void comprobar(data.session.access_token, data.session.user.id);
+      }
+
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === "SIGNED_IN" && session) {
+          void comprobar(session.access_token, session.user.id);
+        }
+        if (event === "SIGNED_OUT") {
+          setVisible(false);
+          setCount(0);
+          setLatestAt(null);
+        }
+      });
+
+      // El cleanup se registra mediante la suscripción creada arriba.
+      return () => subscription.unsubscribe();
+    }
+
+    let cleanup: (() => void) | undefined;
+    void iniciar().then((fn) => {
+      cleanup = fn;
+    });
+
     return () => {
       cancelado = true;
+      cleanup?.();
     };
   }, [pathname, supabase]);
 
