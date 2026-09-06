@@ -121,7 +121,7 @@ export default function EmploymentNovedadesAviso() {
 
   if (!visible || pathname !== "/") return null;
 
-  function revisar() {
+  function marcarVistas() {
     void supabase.auth.getSession().then(({ data }) => {
       if (data.session && latestAt) {
         window.localStorage.setItem(
@@ -131,6 +131,10 @@ export default function EmploymentNovedadesAviso() {
       }
       setVisible(false);
     });
+  }
+
+  function cerrarAviso() {
+    setVisible(false);
   }
 
   return (
@@ -166,12 +170,12 @@ export default function EmploymentNovedadesAviso() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", whiteSpace: "nowrap" }}>
-          <Link href="/empleo/seguimiento" onClick={revisar}>
+          <Link href="/empleo/seguimiento" onClick={marcarVistas}>
             Revisar seguimiento
           </Link>
           <button
             type="button"
-            onClick={revisar}
+            onClick={cerrarAviso}
             style={{
               border: "1px solid #cfd6e2",
               background: "#fff",
