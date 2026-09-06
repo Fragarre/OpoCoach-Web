@@ -20,6 +20,7 @@ type Proceso = {
   turno: string | null;
   plazas: number | null;
   estado: string | null;
+  es_oportunidad: boolean;
   anio_oep: number | null;
   anio_convocatoria: number | null;
   fecha_convocatoria: string | null;
@@ -32,7 +33,6 @@ type Proceso = {
 };
 type Publicacion = { id: number; titulo: string; fecha_publicacion: string | null; url: string; tipo: string | null };
 type Cambio = { id: number; fecha: string | null; descripcion: string; url: string | null };
-
 type DatosProceso = { etapa_actual?: string | null };
 
 async function getJson<T>(path: string, accessToken: string): Promise<T> {
@@ -66,16 +66,24 @@ function fecha(valor: string | null) {
   return Number.isNaN(d.getTime()) ? valor : d.toLocaleDateString("es-ES");
 }
 
-function convocatoria(p: Proceso) {
-  if (p.anio_convocatoria) return `Convocatoria ${p.anio_convocatoria}`;
-  return "Convocatoria no indicada";
+function identificacion(p: Proceso) {
+  const texto = p.denominacion || "";
+  const m = texto.match(/\b(?:Convocatoria|Convocat[oò]ria)\s+([A-Z]?\s*\d{1,3}\/\d{2,4}[A-Z]?)\b/i);
+  if (m) return m[1].replace(/\s+/g, "").toUpperCase();
+  const mAut = texto.match(/\b(AUT\s*\d{1,3}\/\d{2,4})\b/i);
+  if (mAut) return mAut[1].replace(/\s+/g, "").toUpperCase();
+  return null;
 }
 
-function plazo(p: Proceso) {
-  if (!p.fecha_apertura && !p.fecha_cierre) return "Plazo no indicado";
-  if (p.fecha_apertura && p.fecha_cierre) return `Plazo: ${fecha(p.fecha_apertura)} – ${fecha(p.fecha_cierre)}`;
-  if (p.fecha_apertura) return `Desde ${fecha(p.fecha_apertura)}`;
-  return `Hasta ${fecha(p.fecha_cierre)}`;
+function resumen(p: Proceso) {
+  let texto = p.denominacion || "";
+  texto = texto.replace(/^\s*(?:Convocatoria|Convocat[oò]ria)\s+[A-Z]?\s*\d{1,3}\/\d{2,4}[A-Z]?\.?\s*/i, "");
+  texto = texto.replace(/\.?\s*(?:TURNO|TORN)\s+(?:LIBRE|LLIURE)\.?\s*$/i, "");
+  return texto.trim() || p.denominacion;
+}
+
+function tipoVisible(p: Proceso) {
+  return p.tipo_proceso || "Proceso selectivo";
 }
 
 export default function EmpleoPage() {
@@ -99,7 +107,7 @@ export default function EmpleoPage() {
         getJson<Organismo[]>("organismos", token),
         getJson<Proceso[]>(organismoId ? `procesos?organismo_id=${organismoId}` : "procesos", token),
       ]);
-      setMe(m); setOrganismos(o); setProcesos(p);
+      setMe(m); setOrganismos(o); setProcesos(p.filter(x => x.es_oportunidad));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -127,7 +135,8 @@ export default function EmpleoPage() {
     setSeleccion(o); setDetalle(null); setPublicaciones([]); setCambios([]);
     try {
       const token = await getAccessToken(supabase);
-      setProcesos(await getJson<Proceso[]>(o ? `procesos?organismo_id=${o.id}` : "procesos", token));
+      const p = await getJson<Proceso[]>(o ? `procesos?organismo_id=${o.id}` : "procesos", token);
+      setProcesos(p.filter(x => x.es_oportunidad));
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -140,9 +149,7 @@ export default function EmpleoPage() {
   }
 
   if (cargando) return <main style={styles.main}><p>Cargando Empleo…</p></main>;
-
   if (!me) return <main style={styles.main}><h1>Empleo público</h1><p>{error || "No se ha podido identificar la sesión."}</p><a href="/">Volver</a></main>;
-
   if (!me.employment_access) return <main style={styles.main}><h1>Empleo público</h1><p>Tu cuenta no tiene acceso al módulo de Empleo.</p><a href="/">Volver a NetReto</a></main>;
 
   return (
@@ -151,7 +158,7 @@ export default function EmpleoPage() {
         <div>
           <div style={styles.kicker}>NETRETO</div>
           <h1 style={styles.title}>Empleo público</h1>
-          <p style={styles.subtitle}>Convocatorias, procesos y publicaciones oficiales.</p>
+          <p style={styles.subtitle}>Convocatorias activas y oportunidades de acceso al empleo público.</p>
         </div>
         <div style={styles.headerActions}>
           <a href="/" style={styles.link}>NetReto</a>
@@ -174,23 +181,34 @@ export default function EmpleoPage() {
 
         <section style={styles.panel}>
           <div style={styles.sectionHead}>
-            <div><h2 style={styles.h2}>{seleccion ? seleccion.nombre : "Procesos"}</h2><p style={styles.muted}>{procesos.length} procesos</p></div>
+            <div>
+              <h2 style={styles.h2}>{seleccion ? seleccion.nombre : "Convocatorias activas"}</h2>
+              <p style={styles.muted}>{procesos.length} oportunidades</p>
+            </div>
           </div>
 
-          {procesos.length === 0 ? <p>No hay procesos disponibles.</p> : <div style={styles.cards}>
-            {procesos.map(p => (
-              <article key={p.id} style={styles.card}>
-                <button style={styles.cardButton} onClick={() => void abrirProceso(p)}>
-                  <div style={styles.cardTop}>
-                    <span style={styles.badge}>{p.estado || "SIN ESTADO"}</span>
-                    <span>{p.plazas != null ? `${p.plazas} plazas` : "Plazas no indicadas"}</span>
-                  </div>
-                  <h3 style={styles.cardTitle}>{p.denominacion}</h3>
-                  <p style={styles.muted}>{p.organismo_nombre} · {p.tipo_proceso || "—"}{p.turno ? ` · ${p.turno}` : ""}</p>
-                  <div style={styles.meta}><strong>{convocatoria(p)}</strong> · {plazo(p)}{p.fecha_examen ? ` · Examen: ${fecha(p.fecha_examen)}` : ""}</div>
-                </button>
-              </article>
-            ))}
+          {procesos.length === 0 ? <p>No hay convocatorias activas.</p> : <div style={styles.cards}>
+            {procesos.map(p => {
+              const idConv = identificacion(p);
+              return (
+                <article key={p.id} style={styles.card}>
+                  <button style={styles.cardButton} onClick={() => void abrirProceso(p)}>
+                    <div style={styles.cardTop}>
+                      <span style={styles.badge}>{p.estado || "EN SEGUIMIENTO"}</span>
+                      {p.plazas != null && <span>{p.plazas} plazas</span>}
+                    </div>
+                    <div style={styles.cardOrg}>{p.organismo_nombre}</div>
+                    <h3 style={styles.cardTitle}>{idConv ? `Convocatoria ${idConv}` : tipoVisible(p)}</h3>
+                    <p style={styles.cardSummary}>{resumen(p)}</p>
+                    <p style={styles.muted}>{tipoVisible(p)}{p.turno ? ` · ${p.turno}` : ""}{p.grupo ? ` · ${p.grupo}` : ""}</p>
+                    <div style={styles.meta}>
+                      {p.fecha_apertura ? `Apertura: ${fecha(p.fecha_apertura)}` : "Apertura no indicada"}
+                      {p.fecha_cierre ? ` · Cierre: ${fecha(p.fecha_cierre)}` : ""}
+                    </div>
+                  </button>
+                </article>
+              );
+            })}
           </div>}
         </section>
       </section>
@@ -209,7 +227,7 @@ export default function EmpleoPage() {
           <div><strong>Tipo</strong><div>{detalle.tipo_proceso || "—"}</div></div>
           <div><strong>Turno</strong><div>{detalle.turno || "—"}</div></div>
           <div><strong>Plazas</strong><div>{detalle.plazas ?? "—"}</div></div>
-          <div><strong>Convocatoria</strong><div>{detalle.anio_convocatoria || "—"}</div></div>
+          <div><strong>Convocatoria</strong><div>{identificacion(detalle) || detalle.anio_convocatoria || "—"}</div></div>
           <div><strong>Grupo</strong><div>{detalle.grupo || detalle.subgrupo || "—"}</div></div>
           <div><strong>Apertura</strong><div>{fecha(detalle.fecha_apertura)}</div></div>
           <div><strong>Cierre</strong><div>{fecha(detalle.fecha_cierre)}</div></div>
@@ -249,23 +267,31 @@ const styles: Record<string, React.CSSProperties> = {
   header: { display: "flex", justifyContent: "space-between", gap: 24, alignItems: "flex-start", marginBottom: 28 },
   headerActions: { display: "flex", gap: 10, alignItems: "center" },
   kicker: { fontSize: 12, letterSpacing: 1.4, fontWeight: 700, opacity: 0.62, marginBottom: 6 },
-  title: { fontSize: 34, margin: 0 }, subtitle: { marginTop: 8, opacity: 0.72 }, h2: { margin: 0, fontSize: 20 },
+  title: { fontSize: 34, margin: 0 },
+  subtitle: { marginTop: 8, opacity: 0.72 },
+  h2: { margin: 0, fontSize: 20 },
   detailTitle: { margin: 0, fontSize: 28 },
   panel: { border: "1px solid #d9dee8", borderRadius: 14, padding: 18, background: "#fff" },
   panelDetail: { marginTop: 20, border: "1px solid #d9dee8", borderRadius: 14, padding: 22, background: "#fff" },
-  grid: { display: "grid", gridTemplateColumns: "260px 1fr", gap: 18 }, cards: { display: "grid", gap: 12, marginTop: 16 },
+  grid: { display: "grid", gridTemplateColumns: "260px 1fr", gap: 18 },
+  cards: { display: "grid", gap: 12, marginTop: 16 },
   card: { border: "1px solid #e1e5ec", borderRadius: 12, overflow: "hidden" },
   cardButton: { width: "100%", border: 0, background: "transparent", textAlign: "left", padding: 16, cursor: "pointer" },
   cardTop: { display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13, opacity: 0.8 },
+  cardOrg: { marginTop: 10, fontSize: 13, fontWeight: 650, opacity: 0.72 },
   badge: { border: "1px solid #cfd6e2", borderRadius: 999, padding: "3px 8px", fontSize: 11 },
-  cardTitle: { margin: "10px 0 7px", fontSize: 18 }, meta: { marginTop: 9, fontSize: 13, opacity: 0.72 },
+  cardTitle: { margin: "8px 0 5px", fontSize: 19 },
+  cardSummary: { margin: 0, fontSize: 15, lineHeight: 1.4 },
+  meta: { marginTop: 9, fontSize: 13, opacity: 0.72 },
   muted: { opacity: 0.68, fontSize: 13 },
   item: { display: "block", width: "100%", textAlign: "left", border: 0, background: "transparent", padding: "9px 8px", borderRadius: 8, cursor: "pointer" },
   activeItem: { display: "block", width: "100%", textAlign: "left", border: 0, background: "#edf2f8", padding: "9px 8px", borderRadius: 8, cursor: "pointer", fontWeight: 650 },
-  sectionHead: { display: "flex", justifyContent: "space-between" }, detailHead: { display: "flex", justifyContent: "space-between", gap: 18, marginBottom: 22 },
+  sectionHead: { display: "flex", justifyContent: "space-between" },
+  detailHead: { display: "flex", justifyContent: "space-between", gap: 18, marginBottom: 22 },
   detailGrid: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 16, paddingBottom: 22, borderBottom: "1px solid #e5e8ee" },
   columns: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, marginTop: 22 },
-  row: { borderTop: "1px solid #edf0f4", padding: "12px 0", display: "grid", gap: 5 }, link: { textDecoration: "none" },
+  row: { borderTop: "1px solid #edf0f4", padding: "12px 0", display: "grid", gap: 5 },
+  link: { textDecoration: "none" },
   secondary: { border: "1px solid #cfd6e2", background: "#fff", borderRadius: 8, padding: "8px 12px", cursor: "pointer" },
   error: { marginBottom: 18, padding: 12, borderRadius: 8, border: "1px solid #e2b8b8", background: "#fff6f6" },
 };
