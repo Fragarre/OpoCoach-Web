@@ -1,3 +1,5 @@
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
 const METHODS_WITHOUT_BODY = new Set(["GET", "HEAD"]);
@@ -10,6 +12,18 @@ async function proxy(
   if (!backendUrl) {
     return Response.json(
       { detail: "EMPLOYMENT_BACKEND_URL no está configurado." },
+      { status: 500 }
+    );
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if (!supabaseUrl || !supabaseKey) {
+    return Response.json(
+      {
+        detail:
+          "Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.",
+      },
       { status: 500 }
     );
   }
@@ -27,7 +41,30 @@ async function proxy(
 
   if (authorization) {
     headers.set("authorization", authorization);
+  } else {
+    const cookieStore = await cookies();
+    const supabase = createServerClient(supabaseUrl, supabaseKey, {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            cookieStore.set(name, value, options);
+          });
+        },
+      },
+    });
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (session?.access_token) {
+      headers.set("authorization", `Bearer ${session.access_token}`);
+    }
   }
+
   if (contentType) {
     headers.set("content-type", contentType);
   }
