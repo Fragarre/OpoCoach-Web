@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 import EmploymentNovedadesAviso from "@/components/EmploymentNovedadesAviso";
+import EmploymentPublicGate from "@/components/EmploymentPublicGate";
 
 export const metadata: Metadata = {
   title: "Tu Coach | Oposiciones para la Administración Pública de la Comunidad Valenciana",
@@ -68,38 +69,29 @@ export default function RootLayout({
           }
           .employment-entry a:hover { background: #0d459f; }
 
-          /* El quinto paso del recorrido explica Empleo; Materiales sigue teniendo su sección propia. */
-          .public-process #materiales-proceso {
-            border-color: #bcd1ee;
-            background: linear-gradient(145deg, #f4f8ff, #ffffff);
+          /* El quinto paso mantiene exactamente la estructura visual de los demás y presenta Empleo. */
+          .public-process #materiales-proceso .process-content > * { display: none; }
+          .public-process #materiales-proceso .process-content::before {
+            content: "DESCUBRE";
+            display: block;
+            color: #5c6b80;
+            font-size: 12px;
+            letter-spacing: 1.4px;
+            font-weight: 800;
+            margin-bottom: 8px;
           }
-          .public-process #materiales-proceso .process-number { display: none; }
-          .public-process #materiales-proceso .process-content { display: none; }
-          .public-process #materiales-proceso::before {
-            content: "05";
-            display: grid;
-            place-items: center;
-            width: 50px;
-            height: 50px;
-            margin-bottom: 24px;
-            border-radius: 14px;
-            background: #e5efff;
-            color: #1557c0;
-            font-weight: 900;
-          }
-          .public-process #materiales-proceso::after {
-            content: "DESCUBRE\\A\\AEncuentra oportunidades de empleo público que encajan contigo. Sigue las convocatorias y sus novedades oficiales desde un mismo lugar.";
-            white-space: pre-wrap;
+          .public-process #materiales-proceso .process-content::after {
+            content: "Encuentra oportunidades de empleo público que encajan contigo. Sigue las convocatorias y sus novedades oficiales desde un mismo lugar.";
             display: block;
             color: #17315f;
-            font-size: .98rem;
+            font-size: 1rem;
             line-height: 1.55;
             font-weight: 700;
           }
 
           /* La propuesta de Empleo también gana peso dentro del hero. */
           .public-value-panel::after {
-            content: "DESCUBRE OPORTUNIDADES DE EMPLEO PÚBLICO\\A\\AExplora convocatorias y sigue sus novedades oficiales.\\A\\AVer oportunidades →";
+            content: "DESCUBRE OPORTUNIDADES DE EMPLEO PÚBLICO\\00000A\\00000AExplora convocatorias y sigue sus novedades oficiales.\\00000A\\00000AVer oportunidades →";
             white-space: pre-wrap;
             display: block;
             margin-top: 6px;
@@ -148,6 +140,7 @@ export default function RootLayout({
             .employment-entry { width: min(100% - 20px, 1240px); }
             .employment-entry-inner { align-items: flex-start; flex-direction: column; gap: 10px; }
             .employment-entry a { width: 100%; justify-content: center; }
+            .public-process #materiales-proceso .process-content::after { font-size: .98rem; }
           }
         `}</style>
 
@@ -162,7 +155,7 @@ export default function RootLayout({
         </div>
 
         <EmploymentNovedadesAviso />
-        {children}
+        <EmploymentPublicGate>{children}</EmploymentPublicGate>
       </body>
     </html>
   );
