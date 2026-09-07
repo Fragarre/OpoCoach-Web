@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 type Me = { id: string; email: string; employment_access: boolean; subscribed: boolean };
@@ -81,14 +81,32 @@ function resumen(p: Proceso) {
   return texto.trim() || p.denominacion;
 }
 
+function CargandoOverlay() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      style={styles.overlay}
+    >
+      <div style={styles.overlayBox}>
+        <div style={styles.spinner} aria-hidden="true" />
+        <div>Cargando convocatorias…</div>
+      </div>
+    </div>
+  );
+}
+
 export default function EmpleoPage() {
   const supabase = useMemo(() => createClient(), []);
+  const lockRef = useRef(false);
   const [me, setMe] = useState<Me | null>(null);
   const [organismos, setOrganismos] = useState<Organismo[]>([]);
   const [procesos, setProcesos] = useState<Proceso[]>([]);
   const [suscripciones, setSuscripciones] = useState<Suscripcion[]>([]);
   const [seleccion, setSeleccion] = useState<Organismo | null>(null);
   const [cargando, setCargando] = useState(true);
+  const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
 
@@ -113,14 +131,20 @@ export default function EmpleoPage() {
   useEffect(() => { void cargar(); }, [supabase]);
 
   async function cambiarOrganismo(o: Organismo | null) {
+    if (lockRef.current) return;
+    lockRef.current = true;
+    setProcesando(true);
     setSeleccion(o);
+    setError("");
     try {
       const token = await getAccessToken(supabase);
       const p = await getJson<Proceso[]>(o ? `procesos?organismo_id=${o.id}` : "procesos", token);
       setProcesos(p.filter(x => x.es_oportunidad));
-      setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setProcesando(false);
+      lockRef.current = false;
     }
   }
 
@@ -149,6 +173,7 @@ export default function EmpleoPage() {
 
   return (
     <main style={styles.main}>
+      {procesando && <CargandoOverlay />}
       <header style={styles.header}>
         <div>
           <div style={styles.kicker}>NETRETO</div>
@@ -166,9 +191,9 @@ export default function EmpleoPage() {
       <section style={styles.grid}>
         <aside style={styles.panel}>
           <h2 style={styles.h2}>Organismos</h2>
-          <button style={!seleccion ? styles.activeItem : styles.item} onClick={() => void cambiarOrganismo(null)}>Todos</button>
+          <button disabled={procesando} style={!seleccion ? styles.activeItem : styles.item} onClick={() => void cambiarOrganismo(null)}>Todos</button>
           {organismos.map(o => (
-            <button key={o.id} style={seleccion?.id === o.id ? styles.activeItem : styles.item} onClick={() => void cambiarOrganismo(o)}>
+            <button key={o.id} disabled={procesando} style={seleccion?.id === o.id ? styles.activeItem : styles.item} onClick={() => void cambiarOrganismo(o)}>
               {o.nombre}
             </button>
           ))}
@@ -209,7 +234,7 @@ export default function EmpleoPage() {
                     </button>
                     <button
                       style={seguida ? styles.follow : styles.primary}
-                      disabled={busy === p.id}
+                      disabled={busy === p.id || procesando}
                       onClick={() => void toggleSeguimiento(p.id, !seguida)}
                     >
                       {busy === p.id ? "Guardando…" : seguida ? "Siguiendo" : "Seguir"}
@@ -227,6 +252,9 @@ export default function EmpleoPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   main: { maxWidth: 1280, margin: "0 auto", padding: "32px 20px 56px", fontFamily: "system-ui, sans-serif", color: "#172033" },
+  overlay: { position: "fixed", inset: 0, zIndex: 1000, background: "rgba(255,255,255,0.72)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "wait" },
+  overlayBox: { display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", border: "1px solid #d9dee8", borderRadius: 10, background: "#fff", boxShadow: "0 8px 28px rgba(23,32,51,0.12)", fontWeight: 600 },
+  spinner: { width: 22, height: 22, border: "3px solid #d9dee8", borderTop: "3px solid #172033", borderRadius: "50%", animation: "empleo-spin 0.8s linear infinite" },
   header: { display: "flex", justifyContent: "space-between", gap: 24, alignItems: "flex-start", marginBottom: 28 },
   headerActions: { display: "flex", gap: 10, alignItems: "center" },
   kicker: { fontSize: 12, letterSpacing: 1.4, fontWeight: 700, opacity: 0.62, marginBottom: 6 },
@@ -255,3 +283,12 @@ const styles: Record<string, React.CSSProperties> = {
   secondary: { border: "1px solid #cfd6e2", background: "#fff", borderRadius: 8, padding: "8px 12px", cursor: "pointer" },
   error: { marginBottom: 18, padding: 12, borderRadius: 8, border: "1px solid #e2b8b8", background: "#fff6f6" },
 };
+
+const empleoSpinStyle = `@keyframes empleo-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`;
+
+if (typeof document !== "undefined" && !document.getElementById("empleo-spin-style")) {
+  const style = document.createElement("style");
+  style.id = "empleo-spin-style";
+  style.textContent = empleoSpinStyle;
+  document.head.appendChild(style);
+}
