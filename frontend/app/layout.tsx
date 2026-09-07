@@ -114,19 +114,32 @@ export default function RootLayout({
           }
 
           /* Sustitución visual de referencias al nombre anterior en la landing. */
-          .public-hero-copy > p {
-            font-size: 0 !important;
-          }
+          .public-hero-copy > p { font-size: 0 !important; }
           .public-hero-copy > p::after {
             content: "Tu Coach combina simulacros, tests dirigidos y análisis de tus respuestas para que practiques con criterio y detectes dónde necesitas reforzar.";
             font-size: 1.12rem;
           }
-          .public-proof-heading p {
-            font-size: 0 !important;
-          }
+          .public-proof-heading p { font-size: 0 !important; }
           .public-proof-heading p::after {
             content: "Tu Coach acompaña todo el ciclo de entrenamiento: eliges qué practicar, respondes, corriges y utilizas lo aprendido para decidir dónde concentrar el siguiente esfuerzo.";
             font-size: 1rem;
+          }
+          .public-highlight p { font-size: 0 !important; }
+          .public-highlight p::after {
+            content: "Tu Coach reúne contenido y herramientas para que puedas estudiar, consultar y analizar tu preparación dentro de tu convocatoria.";
+            font-size: 1rem;
+          }
+          .public-pricing h2 { font-size: 0 !important; }
+          .public-pricing h2::after {
+            content: "Prueba Tu Coach antes de suscribirte";
+            font-size: 2rem;
+          }
+          .pricing-name { font-size: 0 !important; }
+          .pricing-name::after { content: "Tu Coach"; font-size: inherit; }
+          .public-final-cta h2 { font-size: 0 !important; }
+          .public-final-cta h2::after {
+            content: "Haz tu primer test y comprueba cómo trabaja Tu Coach.";
+            font-size: 2rem;
           }
           .public-footer strong { font-size: 0 !important; }
           .public-footer strong::after { content: "Tu Coach"; font-size: inherit; }
