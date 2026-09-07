@@ -38,6 +38,7 @@ export default function RootLayout({
             margin: 14px auto 0;
             padding: 0;
           }
+          body:not(:has(.public-site)) .employment-entry { display: none; }
           .employment-entry-inner {
             display: flex;
             align-items: center;
