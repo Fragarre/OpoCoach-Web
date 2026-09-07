@@ -223,7 +223,7 @@ export default function EmpleoPage() {
                       <p style={styles.cardSummary}>{resumen(p)}</p>
                       <p style={styles.muted}>{tipoVisible(p)}{p.turno ? ` · ${p.turno}` : ""}{p.grupo ? ` · ${p.grupo}` : ""}</p>
                       <div style={styles.meta}>
-                        {p.fecha_apertura ? `Apertura: ${fecha(p.fecha_apertura)}` : "Apertura no indicada"}
+                        {p.fecha_apertura ? `Inscripción: ${fecha(p.fecha_apertura)}` : "Inscripción no indicada"}
                         {p.fecha_cierre ? ` · Cierre: ${fecha(p.fecha_cierre)}` : ""}
                       </div>
                     </button>
@@ -258,7 +258,7 @@ export default function EmpleoPage() {
           <div><strong>Plazas</strong><div>{detalle.plazas ?? "—"}</div></div>
           <div><strong>Convocatoria</strong><div>{identificacion(detalle) || detalle.anio_convocatoria || "—"}</div></div>
           <div><strong>Grupo</strong><div>{detalle.grupo || detalle.subgrupo || "—"}</div></div>
-          <div><strong>Apertura</strong><div>{fecha(detalle.fecha_apertura)}</div></div>
+          <div><strong>Inscripción</strong><div>{fecha(detalle.fecha_apertura)}</div></div>
           <div><strong>Cierre</strong><div>{fecha(detalle.fecha_cierre)}</div></div>
           <div><strong>Examen</strong><div>{fecha(detalle.fecha_examen)}</div></div>
           <div><strong>Lugar</strong><div>{detalle.lugar_examen || "—"}</div></div>
