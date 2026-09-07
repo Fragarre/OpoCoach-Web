@@ -97,10 +97,22 @@ export default function EmploymentNovedadesAviso() {
 
         const novedades = (await cambiosResponse.json()) as Novedad[];
         const estado = (await estadoResponse.json()) as EstadoNovedades;
-        const utiles = novedades.filter((n) =>
-          n.novedad_tipo === "PUBLICACION" ? esPublicacionUtil(n) : esCambioUtil(n)
-        );
-        if (!utiles.length || cancelado) return;
+        const vista = estado.ultima_novedad_vista_at;
+        const utiles = novedades
+          .filter((n) =>
+            n.novedad_tipo === "PUBLICACION" ? esPublicacionUtil(n) : esCambioUtil(n)
+          )
+          .filter((n) => {
+            if (!vista || !n.detectado_at) return true;
+            return new Date(n.detectado_at).getTime() > new Date(vista).getTime();
+          });
+
+        if (!utiles.length || cancelado) {
+          setVisible(false);
+          setCount(0);
+          setLatestAt(null);
+          return;
+        }
 
         const ultimo = utiles.reduce<string | null>((actual, item) => {
           if (!item.detectado_at) return actual;
@@ -108,18 +120,9 @@ export default function EmploymentNovedadesAviso() {
           return item.detectado_at > actual ? item.detectado_at : actual;
         }, null);
 
-        if (!ultimo) return;
-
-        const vista = estado.ultima_novedad_vista_at;
-        if (!vista || ultimo > vista) {
-          setCount(utiles.filter((item) => !vista || (item.detectado_at && item.detectado_at > vista)).length);
-          setLatestAt(ultimo);
-          setVisible(true);
-        } else {
-          setVisible(false);
-          setCount(0);
-          setLatestAt(null);
-        }
+        setCount(utiles.length);
+        setLatestAt(ultimo);
+        setVisible(true);
       } catch {
         // El aviso nunca debe interferir con la carga normal de NetReto.
       }
