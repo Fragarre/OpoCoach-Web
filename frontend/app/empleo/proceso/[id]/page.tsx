@@ -1,0 +1,203 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+
+type Me = { id: string; email: string; employment_access: boolean; subscribed: boolean };
+type Proceso = {
+  id: number;
+  organismo_id: number;
+  organismo_nombre: string;
+  codigo_externo: string | null;
+  identificador_estable: string | null;
+  denominacion: string;
+  cuerpo_escala: string | null;
+  grupo: string | null;
+  subgrupo: string | null;
+  tipo_proceso: string | null;
+  sistema_selectivo: string | null;
+  turno: string | null;
+  plazas: number | null;
+  estado: string | null;
+  es_oportunidad: boolean;
+  anio_oep: number | null;
+  anio_convocatoria: number | null;
+  fecha_convocatoria: string | null;
+  fecha_apertura: string | null;
+  fecha_cierre: string | null;
+  fecha_examen: string | null;
+  lugar_examen: string | null;
+  ultima_publicacion_at: string | null;
+  datos_json: unknown;
+};
+type Publicacion = { id: number; titulo: string; fecha_publicacion: string | null; url: string; tipo: string | null };
+type Cambio = { id: number; fecha: string | null; descripcion: string; url: string | null };
+type DatosProceso = { etapa_actual?: string | null };
+
+async function getJson<T>(path: string, accessToken: string): Promise<T> {
+  const response = await fetch(`/api/empleo/${path.replace(/^\/+/, "")}`, {
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const text = await response.text();
+  let body: unknown = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  if (!response.ok) {
+    const detail = body && typeof body === "object" && "detail" in body
+      ? String((body as { detail: unknown }).detail)
+      : `HTTP ${response.status}`;
+    throw new Error(detail);
+  }
+  return body as T;
+}
+
+function fecha(valor: string | null) {
+  if (!valor) return "—";
+  const d = new Date(valor);
+  return Number.isNaN(d.getTime()) ? valor : d.toLocaleDateString("es-ES");
+}
+
+function identificacion(p: Proceso) {
+  const texto = p.denominacion || "";
+  const m = texto.match(/\b(?:Convocatoria|Convocat[oò]ria)\s+([A-Z]?\s*\d{1,3}\/\d{2,4}[A-Z]?)\b/i);
+  if (m) return m[1].replace(/\s+/g, "").toUpperCase();
+  const mAut = texto.match(/\b(AUT\s*\d{1,3}\/\d{2,4})\b/i);
+  if (mAut) return mAut[1].replace(/\s+/g, "").toUpperCase();
+  return null;
+}
+
+export default function EmpleoProcesoPage() {
+  const params = useParams<{ id: string }>();
+  const id = params?.id;
+  const supabase = useMemo(() => createClient(), []);
+  const [me, setMe] = useState<Me | null>(null);
+  const [proceso, setProceso] = useState<Proceso | null>(null);
+  const [publicaciones, setPublicaciones] = useState<Publicacion[]>([]);
+  const [cambios, setCambios] = useState<Cambio[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!id) return;
+    let activo = true;
+    async function cargar() {
+      setCargando(true);
+      setError("");
+      try {
+        const { data, error: authError } = await supabase.auth.getSession();
+        if (authError) throw new Error(authError.message);
+        const token = data.session?.access_token;
+        if (!token) throw new Error("Se requiere autenticación.");
+        const [m, procesos, p, c] = await Promise.all([
+          getJson<Me>("me", token),
+          getJson<Proceso[]>("procesos", token),
+          getJson<Publicacion[]>(`procesos/${id}/publicaciones`, token),
+          getJson<Cambio[]>(`procesos/${id}/cambios`, token),
+        ]);
+        if (!activo) return;
+        const encontrado = procesos.find(x => x.id === Number(id) && x.es_oportunidad);
+        if (!encontrado) throw new Error("La convocatoria no está disponible en el catálogo.");
+        setMe(m);
+        setProceso(encontrado);
+        setPublicaciones(p);
+        setCambios(c);
+      } catch (e) {
+        if (activo) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (activo) setCargando(false);
+      }
+    }
+    void cargar();
+    return () => { activo = false; };
+  }, [id, supabase]);
+
+  if (cargando) return <main style={styles.main}><p>Cargando convocatoria…</p></main>;
+  if (error || !me || !proceso) return (
+    <main style={styles.main}>
+      <a href="/empleo" style={styles.back}>← Volver a Empleo público</a>
+      <section style={styles.panel}><h1 style={styles.title}>Convocatoria</h1><p>{error || "No se ha podido cargar la convocatoria."}</p></section>
+    </main>
+  );
+  if (!me.employment_access) return <main style={styles.main}><h1>Empleo público</h1><p>Tu cuenta no tiene acceso al módulo de Empleo.</p><a href="/">Volver a NetReto</a></main>;
+
+  const idConv = identificacion(proceso);
+  const datos = (proceso.datos_json || {}) as DatosProceso;
+
+  return (
+    <main style={styles.main}>
+      <header style={styles.header}>
+        <a href="/empleo" style={styles.back}>← Volver a Empleo público</a>
+        <a href="/" style={styles.link}>NetReto</a>
+      </header>
+
+      <section style={styles.panel}>
+        <div style={styles.kicker}>{proceso.organismo_nombre}</div>
+        <div style={styles.titleRow}>
+          <div>
+            <div style={styles.badge}>{proceso.estado || "SIN ESTADO"}</div>
+            <h1 style={styles.title}>{idConv ? `Convocatoria ${idConv}` : proceso.denominacion}</h1>
+            {idConv && <p style={styles.description}>{proceso.denominacion.replace(/^\s*(?:Convocatoria|Convocat[oò]ria)\s+[A-Z]?\s*\d{1,3}\/\d{2,4}[A-Z]?\.?\s*/i, "").trim()}</p>}
+          </div>
+        </div>
+
+        <div style={styles.detailGrid}>
+          <div><strong>Estado</strong><div>{proceso.estado || "—"}</div></div>
+          <div><strong>Tipo</strong><div>{proceso.tipo_proceso || "—"}</div></div>
+          <div><strong>Turno</strong><div>{proceso.turno || "—"}</div></div>
+          <div><strong>Plazas</strong><div>{proceso.plazas ?? "—"}</div></div>
+          <div><strong>Convocatoria</strong><div>{idConv || proceso.anio_convocatoria || "—"}</div></div>
+          <div><strong>Grupo</strong><div>{proceso.grupo || proceso.subgrupo || "—"}</div></div>
+          <div><strong>Inscripción</strong><div>{fecha(proceso.fecha_apertura)}</div></div>
+          <div><strong>Cierre</strong><div>{fecha(proceso.fecha_cierre)}</div></div>
+          <div><strong>Examen</strong><div>{fecha(proceso.fecha_examen)}</div></div>
+          <div><strong>Lugar</strong><div>{proceso.lugar_examen || "—"}</div></div>
+          <div><strong>Última publicación</strong><div>{fecha(proceso.ultima_publicacion_at)}</div></div>
+          <div><strong>Etapa actual</strong><div>{datos.etapa_actual || "No indicada"}</div></div>
+        </div>
+
+        <div style={styles.columns}>
+          <div>
+            <h2 style={styles.sectionTitle}>Publicaciones oficiales</h2>
+            {publicaciones.length ? publicaciones.map(x => (
+              <div key={x.id} style={styles.row}>
+                <div style={styles.pubTitle}>{x.titulo}</div>
+                <div style={styles.muted}>{fecha(x.fecha_publicacion)}{x.tipo ? ` · ${x.tipo}` : ""}</div>
+                <a href={x.url} target="_blank" rel="noreferrer" style={styles.link}>Abrir publicación oficial</a>
+              </div>
+            )) : <p style={styles.muted}>Sin publicaciones registradas.</p>}
+          </div>
+          <div>
+            <h2 style={styles.sectionTitle}>Cambios</h2>
+            {cambios.length ? cambios.map(x => (
+              <div key={x.id} style={styles.row}>
+                <div style={styles.pubTitle}>{x.descripcion}</div>
+                <div style={styles.muted}>{fecha(x.fecha)}</div>
+                {x.url && <a href={x.url} target="_blank" rel="noreferrer" style={styles.link}>Abrir</a>}
+              </div>
+            )) : <p style={styles.muted}>Sin cambios registrados.</p>}
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  main: { maxWidth: 1280, margin: "0 auto", padding: "32px 20px 56px", fontFamily: "system-ui, sans-serif", color: "#172033" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 },
+  back: { textDecoration: "none", color: "inherit" },
+  link: { color: "inherit" },
+  panel: { border: "1px solid #d9dee8", borderRadius: 14, padding: 24, background: "#fff" },
+  kicker: { fontSize: 12, letterSpacing: 1.4, fontWeight: 700, opacity: 0.62, marginBottom: 8 },
+  titleRow: { marginBottom: 22 },
+  title: { fontSize: 32, lineHeight: 1.2, margin: "10px 0 8px" },
+  description: { fontSize: 17, lineHeight: 1.5, margin: 0, maxWidth: 1000 },
+  badge: { display: "inline-block", border: "1px solid #cfd6e2", borderRadius: 999, padding: "4px 9px", fontSize: 12 },
+  detailGrid: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 18, padding: "20px 0 24px", borderTop: "1px solid #e5e8ee", borderBottom: "1px solid #e5e8ee" },
+  columns: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 36, marginTop: 24 },
+  sectionTitle: { fontSize: 21, margin: "0 0 10px" },
+  row: { borderTop: "1px solid #edf0f4", padding: "14px 0", display: "grid", gap: 6 },
+  pubTitle: { lineHeight: 1.45 },
+  muted: { opacity: 0.68, fontSize: 13 },
+};
