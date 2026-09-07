@@ -38,7 +38,7 @@ export default function EmploymentPublicGate({ children }: { children: React.Rea
 
   if (pathname !== "/empleo") return <>{children}</>;
   if (comprobando) return <EmploymentLoading />;
-  if (autenticado) return <>{children}</>;
+  if (autenticado) return <div className="employment-app">{children}</div>;
 
   return <EmploymentMiniLanding />;
 }
