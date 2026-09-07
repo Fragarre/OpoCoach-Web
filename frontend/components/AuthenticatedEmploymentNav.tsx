@@ -62,5 +62,23 @@ export default function AuthenticatedEmploymentNav() {
     };
   }, [pathname, supabase]);
 
-  return null;
+  return (
+    <style>{`
+      .brand-mark {
+        position: relative !important;
+        display: grid !important;
+        place-items: center !important;
+      }
+      .brand-mark::after {
+        position: absolute !important;
+        inset: 0 !important;
+        display: grid !important;
+        place-items: center !important;
+        margin: 0 !important;
+        width: auto !important;
+        height: auto !important;
+        transform: none !important;
+      }
+    `}</style>
+  );
 }
