@@ -14,6 +14,10 @@ type Novedad = {
   detectado_at: string | null;
 };
 
+type EstadoNovedades = {
+  ultima_novedad_vista_at: string | null;
+};
+
 const CAMPOS_RELEVANTES = new Set([
   "fecha_apertura",
   "fecha_cierre",
@@ -76,15 +80,23 @@ export default function EmploymentNovedadesAviso() {
 
     let cancelado = false;
 
-    async function comprobar(accessToken: string, userId: string) {
+    async function comprobar(accessToken: string) {
       try {
-        const response = await fetch("/api/empleo/seguimiento/cambios?limite=100", {
-          cache: "no-store",
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!response.ok || cancelado) return;
+        const [cambiosResponse, estadoResponse] = await Promise.all([
+          fetch("/api/empleo/seguimiento/cambios?limite=100", {
+            cache: "no-store",
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+          fetch("/api/empleo/seguimiento/estado", {
+            cache: "no-store",
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }),
+        ]);
 
-        const novedades = (await response.json()) as Novedad[];
+        if (!cambiosResponse.ok || !estadoResponse.ok || cancelado) return;
+
+        const novedades = (await cambiosResponse.json()) as Novedad[];
+        const estado = (await estadoResponse.json()) as EstadoNovedades;
         const utiles = novedades.filter((n) =>
           n.novedad_tipo === "PUBLICACION" ? esPublicacionUtil(n) : esCambioUtil(n)
         );
@@ -96,15 +108,17 @@ export default function EmploymentNovedadesAviso() {
           return item.detectado_at > actual ? item.detectado_at : actual;
         }, null);
 
-        const key = `netreto:empleo:ultima-novedad-vista:${userId}`;
-        const vista = window.localStorage.getItem(key);
+        if (!ultimo) return;
 
-        if (!ultimo || !vista || ultimo > vista) {
-          setCount(utiles.length);
+        const vista = estado.ultima_novedad_vista_at;
+        if (!vista || ultimo > vista) {
+          setCount(utiles.filter((item) => !vista || (item.detectado_at && item.detectado_at > vista)).length);
           setLatestAt(ultimo);
           setVisible(true);
         } else {
           setVisible(false);
+          setCount(0);
+          setLatestAt(null);
         }
       } catch {
         // El aviso nunca debe interferir con la carga normal de NetReto.
@@ -114,14 +128,14 @@ export default function EmploymentNovedadesAviso() {
     async function iniciar() {
       const { data } = await supabase.auth.getSession();
       if (data.session && !cancelado) {
-        void comprobar(data.session.access_token, data.session.user.id);
+        void comprobar(data.session.access_token);
       }
 
       const {
         data: { subscription },
       } = supabase.auth.onAuthStateChange((event, session) => {
         if (event === "SIGNED_IN" && session) {
-          void comprobar(session.access_token, session.user.id);
+          void comprobar(session.access_token);
         }
         if (event === "SIGNED_OUT") {
           setVisible(false);
@@ -130,7 +144,6 @@ export default function EmploymentNovedadesAviso() {
         }
       });
 
-      // El cleanup se registra mediante la suscripción creada arriba.
       return () => subscription.unsubscribe();
     }
 
@@ -147,16 +160,25 @@ export default function EmploymentNovedadesAviso() {
 
   if (!visible || pathname !== "/") return null;
 
-  function marcarVistas() {
-    void supabase.auth.getSession().then(({ data }) => {
-      if (data.session && latestAt) {
-        window.localStorage.setItem(
-          `netreto:empleo:ultima-novedad-vista:${data.session.user.id}`,
-          latestAt
-        );
-      }
+  async function marcarVistas() {
+    if (!latestAt) {
       setVisible(false);
-    });
+      return;
+    }
+
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        const params = new URLSearchParams({ hasta: latestAt });
+        await fetch(`/api/empleo/seguimiento/estado/visto?${params.toString()}`, {
+          method: "POST",
+          cache: "no-store",
+          headers: { Authorization: `Bearer ${data.session.access_token}` },
+        });
+      }
+    } finally {
+      setVisible(false);
+    }
   }
 
   function cerrarAviso() {
