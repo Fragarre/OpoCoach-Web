@@ -3,6 +3,7 @@ import Link from "next/link";
 import "./globals.css";
 import EmploymentNovedadesAviso from "@/components/EmploymentNovedadesAviso";
 import EmploymentPublicGate from "@/components/EmploymentPublicGate";
+import AuthenticatedEmploymentNav from "@/components/AuthenticatedEmploymentNav";
 
 export const metadata: Metadata = {
   title: "Tu Coach | Oposiciones para la Administración Pública de la Comunidad Valenciana",
@@ -156,6 +157,7 @@ export default function RootLayout({
 
         <EmploymentNovedadesAviso />
         <EmploymentPublicGate>{children}</EmploymentPublicGate>
+        <AuthenticatedEmploymentNav />
       </body>
     </html>
   );
