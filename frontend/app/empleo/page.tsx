@@ -32,9 +32,6 @@ type Proceso = {
   datos_json: unknown;
 };
 type Suscripcion = { id: number; proceso_id: number };
-type Publicacion = { id: number; titulo: string; fecha_publicacion: string | null; url: string; tipo: string | null };
-type Cambio = { id: number; fecha: string | null; descripcion: string; url: string | null };
-type DatosProceso = { etapa_actual?: string | null };
 
 async function getJson<T>(path: string, accessToken: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/empleo/${path.replace(/^\/+/, "")}`, {
@@ -84,10 +81,6 @@ function resumen(p: Proceso) {
   return texto.trim() || p.denominacion;
 }
 
-function tipoVisible(p: Proceso) {
-  return p.tipo_proceso || "Proceso selectivo";
-}
-
 export default function EmpleoPage() {
   const supabase = useMemo(() => createClient(), []);
   const [me, setMe] = useState<Me | null>(null);
@@ -95,9 +88,6 @@ export default function EmpleoPage() {
   const [procesos, setProcesos] = useState<Proceso[]>([]);
   const [suscripciones, setSuscripciones] = useState<Suscripcion[]>([]);
   const [seleccion, setSeleccion] = useState<Organismo | null>(null);
-  const [detalle, setDetalle] = useState<Proceso | null>(null);
-  const [publicaciones, setPublicaciones] = useState<Publicacion[]>([]);
-  const [cambios, setCambios] = useState<Cambio[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
@@ -122,22 +112,8 @@ export default function EmpleoPage() {
 
   useEffect(() => { void cargar(); }, [supabase]);
 
-  async function abrirProceso(proceso: Proceso) {
-    setError(""); setDetalle(proceso); setPublicaciones([]); setCambios([]);
-    try {
-      const token = await getAccessToken(supabase);
-      const [p, c] = await Promise.all([
-        getJson<Publicacion[]>(`procesos/${proceso.id}/publicaciones`, token),
-        getJson<Cambio[]>(`procesos/${proceso.id}/cambios`, token),
-      ]);
-      setPublicaciones(p); setCambios(c);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }
-
   async function cambiarOrganismo(o: Organismo | null) {
-    setSeleccion(o); setDetalle(null); setPublicaciones([]); setCambios([]);
+    setSeleccion(o);
     try {
       const token = await getAccessToken(supabase);
       const p = await getJson<Proceso[]>(o ? `procesos?organismo_id=${o.id}` : "procesos", token);
@@ -213,15 +189,19 @@ export default function EmpleoPage() {
               return (
                 <article key={p.id} style={styles.card}>
                   <div style={styles.cardLayout}>
-                    <button style={styles.cardButton} onClick={() => void abrirProceso(p)}>
+                    <button
+                      style={styles.cardButton}
+                      onClick={() => { window.location.href = `/empleo/proceso/${p.id}`; }}
+                      aria-label={`Ver detalle de ${idConv ? `Convocatoria ${idConv}` : p.denominacion}`}
+                    >
                       <div style={styles.cardTop}>
                         <span style={styles.badge}>{p.estado || "SIN ESTADO"}</span>
                         {p.plazas != null && <span>{p.plazas} plazas</span>}
                       </div>
                       <div style={styles.cardOrg}>{p.organismo_nombre}</div>
-                      <h3 style={styles.cardTitle}>{idConv ? `Convocatoria ${idConv}` : tipoVisible(p)}</h3>
+                      <h3 style={styles.cardTitle}>{idConv ? `Convocatoria ${idConv}` : p.tipo_proceso || "Proceso selectivo"}</h3>
                       <p style={styles.cardSummary}>{resumen(p)}</p>
-                      <p style={styles.muted}>{tipoVisible(p)}{p.turno ? ` · ${p.turno}` : ""}{p.grupo ? ` · ${p.grupo}` : ""}</p>
+                      <p style={styles.muted}>{p.tipo_proceso || "Proceso selectivo"}{p.turno ? ` · ${p.turno}` : ""}{p.grupo ? ` · ${p.grupo}` : ""}</p>
                       <div style={styles.meta}>
                         {p.fecha_apertura ? `Inscripción: ${fecha(p.fecha_apertura)}` : "Inscripción no indicada"}
                         {p.fecha_cierre ? ` · Cierre: ${fecha(p.fecha_cierre)}` : ""}
@@ -241,52 +221,6 @@ export default function EmpleoPage() {
           </div>}
         </section>
       </section>
-
-      {detalle && <section style={styles.panelDetail}>
-        <div style={styles.detailHead}>
-          <div>
-            <div style={styles.kicker}>{detalle.organismo_nombre}</div>
-            <h2 style={styles.detailTitle}>{detalle.denominacion}</h2>
-          </div>
-          <button style={styles.secondary} onClick={() => setDetalle(null)}>Cerrar</button>
-        </div>
-
-        <div style={styles.detailGrid}>
-          <div><strong>Estado</strong><div>{detalle.estado || "—"}</div></div>
-          <div><strong>Tipo</strong><div>{detalle.tipo_proceso || "—"}</div></div>
-          <div><strong>Turno</strong><div>{detalle.turno || "—"}</div></div>
-          <div><strong>Plazas</strong><div>{detalle.plazas ?? "—"}</div></div>
-          <div><strong>Convocatoria</strong><div>{identificacion(detalle) || detalle.anio_convocatoria || "—"}</div></div>
-          <div><strong>Grupo</strong><div>{detalle.grupo || detalle.subgrupo || "—"}</div></div>
-          <div><strong>Inscripción</strong><div>{fecha(detalle.fecha_apertura)}</div></div>
-          <div><strong>Cierre</strong><div>{fecha(detalle.fecha_cierre)}</div></div>
-          <div><strong>Examen</strong><div>{fecha(detalle.fecha_examen)}</div></div>
-          <div><strong>Lugar</strong><div>{detalle.lugar_examen || "—"}</div></div>
-          <div><strong>Última publicación</strong><div>{fecha(detalle.ultima_publicacion_at)}</div></div>
-          <div><strong>Etapa actual</strong><div>{((detalle.datos_json || {}) as DatosProceso).etapa_actual || "No indicada"}</div></div>
-        </div>
-
-        <div style={styles.columns}>
-          <div>
-            <h3>Publicaciones oficiales</h3>
-            {publicaciones.length ? publicaciones.map(x => (
-              <div key={x.id} style={styles.row}>
-                <div>{x.titulo}</div><div style={styles.muted}>{fecha(x.fecha_publicacion)}</div>
-                <a href={x.url} target="_blank" rel="noreferrer">Abrir publicación</a>
-              </div>
-            )) : <p style={styles.muted}>Sin publicaciones registradas.</p>}
-          </div>
-          <div>
-            <h3>Cambios</h3>
-            {cambios.length ? cambios.map(x => (
-              <div key={x.id} style={styles.row}>
-                <div>{x.descripcion}</div><div style={styles.muted}>{fecha(x.fecha)}</div>
-                {x.url && <a href={x.url} target="_blank" rel="noreferrer">Abrir</a>}
-              </div>
-            )) : <p style={styles.muted}>Sin cambios registrados.</p>}
-          </div>
-        </div>
-      </section>}
     </main>
   );
 }
@@ -299,9 +233,7 @@ const styles: Record<string, React.CSSProperties> = {
   title: { fontSize: 34, margin: 0 },
   subtitle: { marginTop: 8, opacity: 0.72 },
   h2: { margin: 0, fontSize: 20 },
-  detailTitle: { margin: 0, fontSize: 28 },
   panel: { border: "1px solid #d9dee8", borderRadius: 14, padding: 18, background: "#fff" },
-  panelDetail: { marginTop: 20, border: "1px solid #d9dee8", borderRadius: 14, padding: 22, background: "#fff" },
   grid: { display: "grid", gridTemplateColumns: "260px 1fr", gap: 18 },
   cards: { display: "grid", gap: 12, marginTop: 16 },
   card: { border: "1px solid #e1e5ec", borderRadius: 12, overflow: "hidden" },
@@ -317,10 +249,6 @@ const styles: Record<string, React.CSSProperties> = {
   item: { display: "block", width: "100%", textAlign: "left", border: 0, background: "transparent", padding: "9px 8px", borderRadius: 8, cursor: "pointer" },
   activeItem: { display: "block", width: "100%", textAlign: "left", border: 0, background: "#edf2f8", padding: "9px 8px", borderRadius: 8, cursor: "pointer", fontWeight: 650 },
   sectionHead: { display: "flex", justifyContent: "space-between" },
-  detailHead: { display: "flex", justifyContent: "space-between", gap: 18, marginBottom: 22 },
-  detailGrid: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 16, paddingBottom: 22, borderBottom: "1px solid #e5e8ee" },
-  columns: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, marginTop: 22 },
-  row: { borderTop: "1px solid #edf0f4", padding: "12px 0", display: "grid", gap: 5 },
   link: { textDecoration: "none" },
   primary: { border: "1px solid #172033", background: "#172033", color: "#fff", borderRadius: 8, padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap", marginRight: 16 },
   follow: { border: "1px solid #9aa6b8", background: "#edf2f8", borderRadius: 8, padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap", marginRight: 16 },
