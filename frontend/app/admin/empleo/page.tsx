@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import { createClient } from "../../../lib/supabase/client";
 
+type AmbitoAdministrativo = "SI" | "NO" | "REVISION";
+
 type Pendiente = {
   id: number;
   organismo_id: number;
@@ -18,6 +20,7 @@ type Pendiente = {
   estado: string | null;
   origen_dato: string;
   revision_estado: string;
+  ambito_administrativo?: AmbitoAdministrativo;
   fecha_convocatoria: string | null;
   fecha_apertura: string | null;
   fecha_cierre: string | null;
@@ -124,7 +127,9 @@ export default function EmpleoAdminPage() {
         api<Pendiente[]>("pendientes?limite=200"),
         api<Convocatoria[]>("convocatorias"),
       ]);
-      setPendientes(p); setConvocatorias(c);
+      const ambitos = new Map(c.map(x => [x.id, x.ambito_administrativo || "REVISION"]));
+      setPendientes(p.map(x => ({ ...x, ambito_administrativo: ambitos.get(x.id) || "REVISION" })));
+      setConvocatorias(c);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setCargando(false); }
   }
@@ -177,6 +182,20 @@ export default function EmpleoAdminPage() {
     finally { setGuardando(false); }
   }
 
+  async function cambiarAmbito(ambito: AmbitoAdministrativo) {
+    if (!seleccion) return;
+    setGuardando(true); setError(""); setMensaje("");
+    try {
+      await api(`procesos/${seleccion.id}/ambito-administrativo`, {
+        method: "PATCH", body: JSON.stringify({ ambito_administrativo: ambito }),
+      });
+      setSeleccion({ ...seleccion, ambito_administrativo: ambito });
+      setMensaje(ambito === "SI" ? "Incluida en el ámbito administrativo de Tu Coach." : ambito === "NO" ? "Excluida del ámbito administrativo de Tu Coach." : "Marcada para revisión del ámbito administrativo.");
+      await cargar();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setGuardando(false); }
+  }
+
   async function extraerTemario() {
     if (!seleccion) return;
     setExtrayendo(true); setError(""); setMensaje("");
@@ -205,14 +224,14 @@ export default function EmpleoAdminPage() {
 
   const renderItem = (p: Pendiente) => (
     <button type="button" key={p.id} onClick={() => void abrir(p)} style={seleccion?.id === p.id ? styles.itemActive : styles.item}>
-      <strong>{p.denominacion}</strong><span>{p.organismo_nombre || "—"}</span><span>{p.origen_dato} · {p.revision_estado}</span>
+      <strong>{p.denominacion}</strong><span>{p.organismo_nombre || "—"}</span><span>{p.origen_dato} · {p.revision_estado} · Administrativo: {p.ambito_administrativo || "REVISION"}</span>
     </button>
   );
 
   return (
     <main style={styles.main}>
       <header style={styles.header}>
-        <div><div style={styles.kicker}>TU COACH · ADMINISTRACIÓN</div><h1 style={styles.title}>Centro de gestión de Empleo</h1><p style={styles.subtitle}>Revisión, edición y mantenimiento de las oportunidades de empleo público.</p></div>
+        <div><div style={styles.kicker}>TU COACH · ADMINISTRACIÓN</div><h1 style={styles.title}>Centro de gestión de Empleo</h1><p style={styles.subtitle}>Revisión, edición y mantenimiento de las oportunidades administrativas de empleo público.</p></div>
         <a href="/empleo" style={styles.link}>Volver a Empleo</a>
       </header>
       {error && <div style={styles.error}>{error}</div>}
@@ -228,6 +247,14 @@ export default function EmpleoAdminPage() {
           {!seleccion && !nuevo ? <div style={styles.empty}><h2>Gestión de convocatorias</h2><p>Selecciona una convocatoria pendiente o una convocatoria existente, o crea una nueva.</p></div> : <>
             <form onSubmit={guardar} style={styles.form}>
               <h2>{nuevo ? "Nueva convocatoria" : "Editar convocatoria"}</h2>
+              {!nuevo && seleccion && <div style={styles.ambitoBox}>
+                <div><strong>Ámbito administrativo de Tu Coach</strong><p style={styles.muted}>Solo las convocatorias marcadas como SI aparecen en el catálogo público. REVISION requiere decisión manual.</p></div>
+                <select value={seleccion.ambito_administrativo || "REVISION"} disabled={guardando} onChange={(e) => void cambiarAmbito(e.target.value as AmbitoAdministrativo)} style={styles.status}>
+                  <option value="SI">SI · Administrativa</option>
+                  <option value="NO">NO · Fuera de ámbito</option>
+                  <option value="REVISION">REVISION · Decidir manualmente</option>
+                </select>
+              </div>}
               <div style={styles.grid}>
                 <label>Organismo<select value={form.organismo_id} onChange={(e) => setForm({ ...form, organismo_id: e.target.value })}><option value="1">Generalitat Valenciana</option><option value="2">Diputación de Valencia</option></select></label>
                 <label>Denominación<input required value={form.denominacion} onChange={(e) => setForm({ ...form, denominacion: e.target.value })} /></label>
@@ -273,5 +300,6 @@ const styles: Record<string, CSSProperties> = {
   sideHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }, sectionTitle: { fontWeight: 700, padding: "18px 8px 8px", borderTop: "1px solid #d9dee8", marginTop: 10 },
   item: { display: "flex", flexDirection: "column", gap: 4, width: "100%", textAlign: "left", padding: "12px 10px", marginBottom: 6, border: "1px solid transparent", borderRadius: 9, background: "transparent", cursor: "pointer" }, itemActive: { display: "flex", flexDirection: "column", gap: 4, width: "100%", textAlign: "left", padding: "12px 10px", marginBottom: 6, border: "1px solid #172033", borderRadius: 9, background: "#edf2f8", cursor: "pointer" },
   content: { minWidth: 0 }, empty: { border: "1px solid #d9dee8", borderRadius: 12, padding: 28, background: "#fff" }, form: { border: "1px solid #d9dee8", borderRadius: 12, padding: 22, background: "#fff", marginBottom: 18 }, grid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }, actions: { display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }, temarioActions: { display: "flex", gap: 10, marginBottom: 10 },
+  ambitoBox: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 18, padding: 14, marginBottom: 18, border: "1px solid #c8ced9", borderRadius: 9, background: "#f7f9fc" },
   primary: { border: 0, borderRadius: 8, padding: "9px 14px", background: "#172033", color: "#fff", fontWeight: 700, cursor: "pointer" }, secondary: { border: "1px solid #c8ced9", borderRadius: 8, padding: "9px 14px", background: "#fff", cursor: "pointer" }, danger: { border: "1px solid #c8ced9", borderRadius: 8, padding: "9px 14px", background: "#fff", color: "#8b1e1e", cursor: "pointer" }, status: { padding: 9, border: "1px solid #c8ced9", borderRadius: 7, marginBottom: 10 }, temario: { display: "block", width: "100%", boxSizing: "border-box", margin: "8px 0 12px", padding: 12, border: "1px solid #c8ced9", borderRadius: 8, fontFamily: "inherit", resize: "vertical" }, source: { marginBottom: 12, fontSize: 14, opacity: 0.7 }, error: { padding: 12, marginBottom: 14, borderRadius: 8, background: "#fff0f0", color: "#8b1e1e" }, success: { padding: 12, marginBottom: 14, borderRadius: 8, background: "#f0f6f0" }, muted: { opacity: 0.65, fontSize: 14 },
 };
