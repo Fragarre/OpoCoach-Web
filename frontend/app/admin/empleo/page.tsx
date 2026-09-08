@@ -26,6 +26,8 @@ type Pendiente = {
   observaciones_internas: string | null;
 };
 
+type Convocatoria = Pendiente;
+
 type Temario = {
   contenido_texto: string;
   origen: string;
@@ -63,22 +65,10 @@ type Formulario = {
 };
 
 const inicial: Formulario = {
-  organismo_id: "1",
-  denominacion: "",
-  codigo_externo: "",
-  grupo: "",
-  tipo_proceso: "Oposición",
-  sistema_selectivo: "Oposición",
-  turno: "TURNO_LIBRE",
-  plazas: "",
-  estado: "EN_CURSO",
-  revision_estado: "PENDIENTE_REVISION",
-  fecha_convocatoria: "",
-  fecha_apertura: "",
-  fecha_cierre: "",
-  fecha_examen: "",
-  lugar_examen: "",
-  observaciones_internas: "",
+  organismo_id: "1", denominacion: "", codigo_externo: "", grupo: "", tipo_proceso: "Oposición",
+  sistema_selectivo: "Oposición", turno: "TURNO_LIBRE", plazas: "", estado: "EN_CURSO",
+  revision_estado: "PENDIENTE_REVISION", fecha_convocatoria: "", fecha_apertura: "", fecha_cierre: "",
+  fecha_examen: "", lugar_examen: "", observaciones_internas: "",
 };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -92,8 +82,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   let body: unknown = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
   if (!response.ok) {
-    const detail = body && typeof body === "object" && "detail" in body
-      ? String((body as { detail: unknown }).detail) : `HTTP ${response.status}`;
+    const detail = body && typeof body === "object" && "detail" in body ? String((body as { detail: unknown }).detail) : `HTTP ${response.status}`;
     throw new Error(detail);
   }
   return body as T;
@@ -113,6 +102,7 @@ function formularioDe(p: Pendiente): Formulario {
 
 export default function EmpleoAdminPage() {
   const [pendientes, setPendientes] = useState<Pendiente[]>([]);
+  const [convocatorias, setConvocatorias] = useState<Convocatoria[]>([]);
   const [seleccion, setSeleccion] = useState<Pendiente | null>(null);
   const [form, setForm] = useState<Formulario>(inicial);
   const [temario, setTemario] = useState<Temario>(null);
@@ -129,8 +119,13 @@ export default function EmpleoAdminPage() {
 
   async function cargar() {
     setCargando(true); setError("");
-    try { setPendientes(await api<Pendiente[]>("pendientes?limite=200")); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    try {
+      const [p, c] = await Promise.all([
+        api<Pendiente[]>("pendientes?limite=200"),
+        api<Convocatoria[]>("convocatorias"),
+      ]);
+      setPendientes(p); setConvocatorias(c);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setCargando(false); }
   }
 
@@ -187,10 +182,7 @@ export default function EmpleoAdminPage() {
     setExtrayendo(true); setError(""); setMensaje("");
     try {
       const resultado = await api<ExtraccionTemario>(`procesos/${seleccion.id}/temario/extraer`, { method: "POST" });
-      setTextoTemario(resultado.contenido_texto);
-      setOrigenTemario("AUTOMATICO");
-      setEstadoTemario("PENDIENTE_REVISION");
-      setFuenteTemario(resultado.fuente_url);
+      setTextoTemario(resultado.contenido_texto); setOrigenTemario("AUTOMATICO"); setEstadoTemario("PENDIENTE_REVISION"); setFuenteTemario(resultado.fuente_url);
       setMensaje(`Temario extraído de ${resultado.fuente_titulo || resultado.fuente_referencia || "la fuente oficial"}. Revísalo antes de guardarlo.`);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setExtrayendo(false); }
@@ -211,6 +203,12 @@ export default function EmpleoAdminPage() {
 
   if (cargando) return <main style={styles.main}><p>Cargando Centro de gestión…</p></main>;
 
+  const renderItem = (p: Pendiente) => (
+    <button type="button" key={p.id} onClick={() => void abrir(p)} style={seleccion?.id === p.id ? styles.itemActive : styles.item}>
+      <strong>{p.denominacion}</strong><span>{p.organismo_nombre || "—"}</span><span>{p.origen_dato} · {p.revision_estado}</span>
+    </button>
+  );
+
   return (
     <main style={styles.main}>
       <header style={styles.header}>
@@ -222,14 +220,12 @@ export default function EmpleoAdminPage() {
       <div style={styles.layout}>
         <aside style={styles.sidebar}>
           <div style={styles.sideHead}><strong>Pendientes de revisión</strong><button type="button" onClick={crear} style={styles.primary}>+ Nueva</button></div>
-          {pendientes.length === 0 ? <p style={styles.muted}>No hay pendientes.</p> : pendientes.map((p) => (
-            <button type="button" key={p.id} onClick={() => void abrir(p)} style={seleccion?.id === p.id ? styles.itemActive : styles.item}>
-              <strong>{p.denominacion}</strong><span>{p.organismo_nombre || "—"}</span><span>{p.origen_dato} · {p.revision_estado}</span>
-            </button>
-          ))}
+          {pendientes.length === 0 ? <p style={styles.muted}>No hay pendientes.</p> : pendientes.map(renderItem)}
+          <div style={styles.sectionTitle}>Convocatorias existentes</div>
+          {convocatorias.length === 0 ? <p style={styles.muted}>No hay convocatorias.</p> : convocatorias.map(renderItem)}
         </aside>
         <section style={styles.content}>
-          {!seleccion && !nuevo ? <div style={styles.empty}><h2>Gestión de convocatorias</h2><p>Selecciona una convocatoria pendiente o crea una nueva.</p></div> : <>
+          {!seleccion && !nuevo ? <div style={styles.empty}><h2>Gestión de convocatorias</h2><p>Selecciona una convocatoria pendiente o una convocatoria existente, o crea una nueva.</p></div> : <>
             <form onSubmit={guardar} style={styles.form}>
               <h2>{nuevo ? "Nueva convocatoria" : "Editar convocatoria"}</h2>
               <div style={styles.grid}>
@@ -274,7 +270,8 @@ const styles: Record<string, CSSProperties> = {
   header: { display: "flex", justifyContent: "space-between", gap: 24, alignItems: "flex-start", marginBottom: 24 },
   kicker: { fontSize: 12, letterSpacing: 1.4, fontWeight: 700, opacity: 0.6 }, title: { fontSize: 32, margin: "6px 0" }, subtitle: { opacity: 0.7 }, link: { color: "inherit", fontWeight: 600 },
   layout: { display: "grid", gridTemplateColumns: "360px minmax(0, 1fr)", gap: 18, alignItems: "start" }, sidebar: { border: "1px solid #d9dee8", borderRadius: 12, background: "#fff", padding: 14, position: "sticky", top: 18, maxHeight: "calc(100vh - 36px)", overflow: "auto" },
-  sideHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }, item: { display: "flex", flexDirection: "column", gap: 4, width: "100%", textAlign: "left", padding: "12px 10px", marginBottom: 6, border: "1px solid transparent", borderRadius: 9, background: "transparent", cursor: "pointer" }, itemActive: { display: "flex", flexDirection: "column", gap: 4, width: "100%", textAlign: "left", padding: "12px 10px", marginBottom: 6, border: "1px solid #172033", borderRadius: 9, background: "#edf2f8", cursor: "pointer" },
+  sideHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }, sectionTitle: { fontWeight: 700, padding: "18px 8px 8px", borderTop: "1px solid #d9dee8", marginTop: 10 },
+  item: { display: "flex", flexDirection: "column", gap: 4, width: "100%", textAlign: "left", padding: "12px 10px", marginBottom: 6, border: "1px solid transparent", borderRadius: 9, background: "transparent", cursor: "pointer" }, itemActive: { display: "flex", flexDirection: "column", gap: 4, width: "100%", textAlign: "left", padding: "12px 10px", marginBottom: 6, border: "1px solid #172033", borderRadius: 9, background: "#edf2f8", cursor: "pointer" },
   content: { minWidth: 0 }, empty: { border: "1px solid #d9dee8", borderRadius: 12, padding: 28, background: "#fff" }, form: { border: "1px solid #d9dee8", borderRadius: 12, padding: 22, background: "#fff", marginBottom: 18 }, grid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }, actions: { display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }, temarioActions: { display: "flex", gap: 10, marginBottom: 10 },
   primary: { border: 0, borderRadius: 8, padding: "9px 14px", background: "#172033", color: "#fff", fontWeight: 700, cursor: "pointer" }, secondary: { border: "1px solid #c8ced9", borderRadius: 8, padding: "9px 14px", background: "#fff", cursor: "pointer" }, danger: { border: "1px solid #c8ced9", borderRadius: 8, padding: "9px 14px", background: "#fff", color: "#8b1e1e", cursor: "pointer" }, status: { padding: 9, border: "1px solid #c8ced9", borderRadius: 7, marginBottom: 10 }, temario: { display: "block", width: "100%", boxSizing: "border-box", margin: "8px 0 12px", padding: 12, border: "1px solid #c8ced9", borderRadius: 8, fontFamily: "inherit", resize: "vertical" }, source: { marginBottom: 12, fontSize: 14, opacity: 0.7 }, error: { padding: 12, marginBottom: 14, borderRadius: 8, background: "#fff0f0", color: "#8b1e1e" }, success: { padding: 12, marginBottom: 14, borderRadius: 8, background: "#f0f6f0" }, muted: { opacity: 0.65, fontSize: 14 },
 };
