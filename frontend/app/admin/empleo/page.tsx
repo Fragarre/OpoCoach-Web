@@ -229,7 +229,7 @@ export default function EmpleoAdminPage() {
             <form onSubmit={guardar} style={styles.form}>
               <h2>{nuevo ? "Nueva convocatoria" : "Editar convocatoria"}</h2>
               <div style={styles.grid}>
-                <label>Organismo<select value={form.organismo_id} onChange={(e) => setForm({ ...form, organismo_id: e.target.value })}><option value="1">Generalitat Valenciana</option><option value="2">Diputación de Valencia</option><option value="3">Ayuntamiento de València</option></select></label>
+                <label>Organismo<select value={form.organismo_id} onChange={(e) => setForm({ ...form, organismo_id: e.target.value })}><option value="1">Generalitat Valenciana</option><option value="2">Diputación de Valencia</option></select></label>
                 <label>Denominación<input required value={form.denominacion} onChange={(e) => setForm({ ...form, denominacion: e.target.value })} /></label>
                 <label>Código externo<input value={form.codigo_externo} onChange={(e) => setForm({ ...form, codigo_externo: e.target.value })} /></label>
                 <label>Grupo<input value={form.grupo} onChange={(e) => setForm({ ...form, grupo: e.target.value })} /></label>
