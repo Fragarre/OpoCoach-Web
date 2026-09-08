@@ -34,6 +34,15 @@ type Temario = {
   observaciones: string | null;
 } | null;
 
+type ExtraccionTemario = {
+  contenido_texto: string;
+  fuente_url: string;
+  fuente_publicacion_id: number;
+  fuente_referencia: string | null;
+  fuente_titulo: string | null;
+  caracteres_fuente: number;
+};
+
 type Formulario = {
   organismo_id: string;
   denominacion: string;
@@ -77,22 +86,14 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
   const headers = new Headers(init?.headers);
   headers.set("Content-Type", "application/json");
-  if (session?.access_token) {
-    headers.set("Authorization", `Bearer ${session.access_token}`);
-  }
-
-  const response = await fetch(`/api/empleo/admin/gestion/${path}`, {
-    cache: "no-store",
-    ...init,
-    headers,
-  });
+  if (session?.access_token) headers.set("Authorization", `Bearer ${session.access_token}`);
+  const response = await fetch(`/api/empleo/admin/gestion/${path}`, { cache: "no-store", ...init, headers });
   const text = await response.text();
   let body: unknown = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
   if (!response.ok) {
     const detail = body && typeof body === "object" && "detail" in body
-      ? String((body as { detail: unknown }).detail)
-      : `HTTP ${response.status}`;
+      ? String((body as { detail: unknown }).detail) : `HTTP ${response.status}`;
     throw new Error(detail);
   }
   return body as T;
@@ -100,21 +101,12 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 function formularioDe(p: Pendiente): Formulario {
   return {
-    organismo_id: String(p.organismo_id),
-    denominacion: p.denominacion || "",
-    codigo_externo: p.codigo_externo || "",
-    grupo: p.grupo || "",
-    tipo_proceso: p.tipo_proceso || "",
-    sistema_selectivo: p.sistema_selectivo || "",
-    turno: p.turno || "",
-    plazas: p.plazas == null ? "" : String(p.plazas),
-    estado: p.estado || "EN_CURSO",
-    revision_estado: p.revision_estado || "PENDIENTE_REVISION",
-    fecha_convocatoria: (p.fecha_convocatoria || "").slice(0, 10),
-    fecha_apertura: (p.fecha_apertura || "").slice(0, 10),
-    fecha_cierre: (p.fecha_cierre || "").slice(0, 10),
-    fecha_examen: (p.fecha_examen || "").slice(0, 10),
-    lugar_examen: p.lugar_examen || "",
+    organismo_id: String(p.organismo_id), denominacion: p.denominacion || "", codigo_externo: p.codigo_externo || "",
+    grupo: p.grupo || "", tipo_proceso: p.tipo_proceso || "", sistema_selectivo: p.sistema_selectivo || "",
+    turno: p.turno || "", plazas: p.plazas == null ? "" : String(p.plazas), estado: p.estado || "EN_CURSO",
+    revision_estado: p.revision_estado || "PENDIENTE_REVISION", fecha_convocatoria: (p.fecha_convocatoria || "").slice(0, 10),
+    fecha_apertura: (p.fecha_apertura || "").slice(0, 10), fecha_cierre: (p.fecha_cierre || "").slice(0, 10),
+    fecha_examen: (p.fecha_examen || "").slice(0, 10), lugar_examen: p.lugar_examen || "",
     observaciones_internas: p.observaciones_internas || "",
   };
 }
@@ -126,132 +118,95 @@ export default function EmpleoAdminPage() {
   const [temario, setTemario] = useState<Temario>(null);
   const [textoTemario, setTextoTemario] = useState("");
   const [estadoTemario, setEstadoTemario] = useState("PENDIENTE_REVISION");
+  const [origenTemario, setOrigenTemario] = useState("MANUAL");
+  const [fuenteTemario, setFuenteTemario] = useState<string | null>(null);
   const [nuevo, setNuevo] = useState(false);
   const [cargando, setCargando] = useState(true);
+  const [extrayendo, setExtrayendo] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
 
   async function cargar() {
-    setCargando(true);
-    setError("");
-    try {
-      setPendientes(await api<Pendiente[]>("pendientes?limite=200"));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setCargando(false);
-    }
+    setCargando(true); setError("");
+    try { setPendientes(await api<Pendiente[]>("pendientes?limite=200")); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setCargando(false); }
   }
 
   useEffect(() => { void cargar(); }, []);
 
   async function abrir(p: Pendiente) {
-    setSeleccion(p);
-    setNuevo(false);
-    setForm(formularioDe(p));
-    setMensaje("");
-    setError("");
+    setSeleccion(p); setNuevo(false); setForm(formularioDe(p)); setMensaje(""); setError("");
     try {
       const t = await api<Temario>(`procesos/${p.id}/temario`);
-      setTemario(t);
-      setTextoTemario(t?.contenido_texto || "");
-      setEstadoTemario(t?.estado || "PENDIENTE_REVISION");
+      setTemario(t); setTextoTemario(t?.contenido_texto || ""); setEstadoTemario(t?.estado || "PENDIENTE_REVISION");
+      setOrigenTemario(t?.origen || "MANUAL"); setFuenteTemario(t?.fuente_url || null);
     } catch (e) {
-      setTemario(null);
-      setTextoTemario("");
-      setEstadoTemario("PENDIENTE_REVISION");
+      setTemario(null); setTextoTemario(""); setEstadoTemario("PENDIENTE_REVISION"); setOrigenTemario("MANUAL"); setFuenteTemario(null);
       setError(e instanceof Error ? e.message : String(e));
     }
   }
 
   function crear() {
-    setSeleccion(null);
-    setNuevo(true);
-    setForm(inicial);
-    setTemario(null);
-    setTextoTemario("");
-    setEstadoTemario("PENDIENTE_REVISION");
-    setMensaje("");
-    setError("");
+    setSeleccion(null); setNuevo(true); setForm(inicial); setTemario(null); setTextoTemario("");
+    setEstadoTemario("PENDIENTE_REVISION"); setOrigenTemario("MANUAL"); setFuenteTemario(null); setMensaje(""); setError("");
   }
 
   async function guardar(e: FormEvent) {
-    e.preventDefault();
-    setGuardando(true);
-    setError("");
-    setMensaje("");
+    e.preventDefault(); setGuardando(true); setError(""); setMensaje("");
     const payload = {
-      ...form,
-      organismo_id: Number(form.organismo_id),
-      plazas: form.plazas ? Number(form.plazas) : null,
-      codigo_externo: form.codigo_externo || null,
-      grupo: form.grupo || null,
-      tipo_proceso: form.tipo_proceso || null,
-      sistema_selectivo: form.sistema_selectivo || null,
-      turno: form.turno || null,
-      fecha_convocatoria: form.fecha_convocatoria || null,
-      fecha_apertura: form.fecha_apertura || null,
-      fecha_cierre: form.fecha_cierre || null,
-      fecha_examen: form.fecha_examen || null,
-      lugar_examen: form.lugar_examen || null,
-      observaciones_internas: form.observaciones_internas || null,
-      es_oportunidad: true,
+      ...form, organismo_id: Number(form.organismo_id), plazas: form.plazas ? Number(form.plazas) : null,
+      codigo_externo: form.codigo_externo || null, grupo: form.grupo || null, tipo_proceso: form.tipo_proceso || null,
+      sistema_selectivo: form.sistema_selectivo || null, turno: form.turno || null,
+      fecha_convocatoria: form.fecha_convocatoria || null, fecha_apertura: form.fecha_apertura || null,
+      fecha_cierre: form.fecha_cierre || null, fecha_examen: form.fecha_examen || null,
+      lugar_examen: form.lugar_examen || null, observaciones_internas: form.observaciones_internas || null, es_oportunidad: true,
     };
     try {
-      const p = nuevo
-        ? await api<Pendiente>("procesos", { method: "POST", body: JSON.stringify(payload) })
+      const p = nuevo ? await api<Pendiente>("procesos", { method: "POST", body: JSON.stringify(payload) })
         : await api<Pendiente>(`procesos/${seleccion?.id}`, { method: "PUT", body: JSON.stringify(payload) });
-      setSeleccion(p);
-      setForm(formularioDe(p));
-      setNuevo(false);
-      setMensaje("Convocatoria guardada.");
-      await cargar();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setGuardando(false);
-    }
+      setSeleccion(p); setForm(formularioDe(p)); setNuevo(false); setMensaje("Convocatoria guardada."); await cargar();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setGuardando(false); }
   }
 
   async function cambiarRevision(estado: string) {
     if (!seleccion) return;
-    setGuardando(true);
-    setError("");
-    setMensaje("");
+    setGuardando(true); setError(""); setMensaje("");
     try {
-      await api(`procesos/${seleccion.id}/revision`, {
-        method: "PATCH",
-        body: JSON.stringify({ estado, observaciones: form.observaciones_internas || null }),
-      });
-      setForm((actual) => ({ ...actual, revision_estado: estado }));
-      setSeleccion({ ...seleccion, revision_estado: estado });
-      setMensaje(`Estado cambiado a ${estado}.`);
-      await cargar();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setGuardando(false);
-    }
+      await api(`procesos/${seleccion.id}/revision`, { method: "PATCH", body: JSON.stringify({ estado, observaciones: form.observaciones_internas || null }) });
+      setForm((actual) => ({ ...actual, revision_estado: estado })); setSeleccion({ ...seleccion, revision_estado: estado });
+      setMensaje(`Estado cambiado a ${estado}.`); await cargar();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setGuardando(false); }
+  }
+
+  async function extraerTemario() {
+    if (!seleccion) return;
+    setExtrayendo(true); setError(""); setMensaje("");
+    try {
+      const resultado = await api<ExtraccionTemario>(`procesos/${seleccion.id}/temario/extraer`, { method: "POST" });
+      setTextoTemario(resultado.contenido_texto);
+      setOrigenTemario("AUTOMATICO");
+      setEstadoTemario("PENDIENTE_REVISION");
+      setFuenteTemario(resultado.fuente_url);
+      setMensaje(`Temario extraído de ${resultado.fuente_titulo || resultado.fuente_referencia || "la fuente oficial"}. Revísalo antes de guardarlo.`);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setExtrayendo(false); }
   }
 
   async function guardarTemario() {
     if (!seleccion || !textoTemario.trim()) return;
-    setGuardando(true);
-    setError("");
-    setMensaje("");
+    setGuardando(true); setError(""); setMensaje("");
     try {
-      await api(`procesos/${seleccion.id}/temario`, {
+      const t = await api<Temario>(`procesos/${seleccion.id}/temario`, {
         method: "PUT",
-        body: JSON.stringify({ contenido_texto: textoTemario, origen: "MANUAL", estado: estadoTemario }),
+        body: JSON.stringify({ contenido_texto: textoTemario, origen: origenTemario, estado: estadoTemario, fuente_url: fuenteTemario }),
       });
-      setTemario({ contenido_texto: textoTemario, origen: "MANUAL", estado: estadoTemario, fuente_url: null, observaciones: null });
-      setMensaje("Temario guardado.");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setGuardando(false);
-    }
+      setTemario(t); setMensaje("Temario guardado.");
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setGuardando(false); }
   }
 
   if (cargando) return <main style={styles.main}><p>Cargando Centro de gestión…</p></main>;
@@ -299,11 +254,13 @@ export default function EmpleoAdminPage() {
             </form>
             {!nuevo && seleccion && <section style={styles.form}>
               <h2>Temario oficial</h2>
-              <p style={styles.muted}>Se conserva el texto literal del temario de la convocatoria.</p>
+              <p style={styles.muted}>Se conserva el texto literal del temario de la convocatoria. La extracción automática solo propone el texto; no lo publica sin revisión.</p>
+              <div style={styles.temarioActions}><button type="button" disabled={extrayendo || guardando} onClick={() => void extraerTemario()} style={styles.primary}>{extrayendo ? "Extrayendo…" : "Extraer de fuente oficial"}</button></div>
               <select value={estadoTemario} onChange={(e) => setEstadoTemario(e.target.value)} style={styles.status}><option>PENDIENTE_REVISION</option><option>VERIFICADO</option><option>DESCARTADO</option></select>
               <textarea rows={18} value={textoTemario} onChange={(e) => setTextoTemario(e.target.value)} placeholder="Pegar aquí el temario oficial…" style={styles.temario} />
+              {fuenteTemario && <div style={styles.source}>Fuente: <a href={fuenteTemario} target="_blank" rel="noreferrer">publicación oficial</a> · Origen: {origenTemario}</div>}
               <button type="button" disabled={guardando || !textoTemario.trim()} onClick={() => void guardarTemario()} style={styles.primary}>Guardar temario</button>
-              {temario && <p style={styles.muted}>Origen: {temario.origen} · Estado: {temario.estado}</p>}
+              {temario && <p style={styles.muted}>Origen almacenado: {temario.origen} · Estado: {temario.estado}</p>}
             </section>}
           </>}
         </section>
@@ -315,26 +272,9 @@ export default function EmpleoAdminPage() {
 const styles: Record<string, CSSProperties> = {
   main: { maxWidth: 1440, margin: "0 auto", padding: "32px 20px 60px", fontFamily: "system-ui, sans-serif", color: "#172033" },
   header: { display: "flex", justifyContent: "space-between", gap: 24, alignItems: "flex-start", marginBottom: 24 },
-  kicker: { fontSize: 12, letterSpacing: 1.4, fontWeight: 700, opacity: 0.6 },
-  title: { fontSize: 32, margin: "6px 0" },
-  subtitle: { opacity: 0.7 },
-  link: { color: "inherit", fontWeight: 600 },
-  layout: { display: "grid", gridTemplateColumns: "360px minmax(0, 1fr)", gap: 18, alignItems: "start" },
-  sidebar: { border: "1px solid #d9dee8", borderRadius: 12, background: "#fff", padding: 14, position: "sticky", top: 18, maxHeight: "calc(100vh - 36px)", overflow: "auto" },
-  sideHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  item: { display: "flex", flexDirection: "column", gap: 4, width: "100%", textAlign: "left", padding: "12px 10px", marginBottom: 6, border: "1px solid transparent", borderRadius: 9, background: "transparent", cursor: "pointer" },
-  itemActive: { display: "flex", flexDirection: "column", gap: 4, width: "100%", textAlign: "left", padding: "12px 10px", marginBottom: 6, border: "1px solid #172033", borderRadius: 9, background: "#edf2f8", cursor: "pointer" },
-  content: { minWidth: 0 },
-  empty: { border: "1px solid #d9dee8", borderRadius: 12, padding: 28, background: "#fff" },
-  form: { border: "1px solid #d9dee8", borderRadius: 12, padding: 22, background: "#fff", marginBottom: 18 },
-  grid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 },
-  actions: { display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" },
-  primary: { border: 0, borderRadius: 8, padding: "9px 14px", background: "#172033", color: "#fff", fontWeight: 700, cursor: "pointer" },
-  secondary: { border: "1px solid #c8ced9", borderRadius: 8, padding: "9px 14px", background: "#fff", cursor: "pointer" },
-  danger: { border: "1px solid #c8ced9", borderRadius: 8, padding: "9px 14px", background: "#fff", color: "#8b1e1e", cursor: "pointer" },
-  status: { padding: 9, border: "1px solid #c8ced9", borderRadius: 7, marginBottom: 10 },
-  temario: { display: "block", width: "100%", boxSizing: "border-box", margin: "8px 0 12px", padding: 12, border: "1px solid #c8ced9", borderRadius: 8, fontFamily: "inherit", resize: "vertical" },
-  error: { padding: 12, marginBottom: 14, borderRadius: 8, background: "#fff0f0", color: "#8b1e1e" },
-  success: { padding: 12, marginBottom: 14, borderRadius: 8, background: "#f0f6f0" },
-  muted: { opacity: 0.65, fontSize: 14 },
+  kicker: { fontSize: 12, letterSpacing: 1.4, fontWeight: 700, opacity: 0.6 }, title: { fontSize: 32, margin: "6px 0" }, subtitle: { opacity: 0.7 }, link: { color: "inherit", fontWeight: 600 },
+  layout: { display: "grid", gridTemplateColumns: "360px minmax(0, 1fr)", gap: 18, alignItems: "start" }, sidebar: { border: "1px solid #d9dee8", borderRadius: 12, background: "#fff", padding: 14, position: "sticky", top: 18, maxHeight: "calc(100vh - 36px)", overflow: "auto" },
+  sideHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }, item: { display: "flex", flexDirection: "column", gap: 4, width: "100%", textAlign: "left", padding: "12px 10px", marginBottom: 6, border: "1px solid transparent", borderRadius: 9, background: "transparent", cursor: "pointer" }, itemActive: { display: "flex", flexDirection: "column", gap: 4, width: "100%", textAlign: "left", padding: "12px 10px", marginBottom: 6, border: "1px solid #172033", borderRadius: 9, background: "#edf2f8", cursor: "pointer" },
+  content: { minWidth: 0 }, empty: { border: "1px solid #d9dee8", borderRadius: 12, padding: 28, background: "#fff" }, form: { border: "1px solid #d9dee8", borderRadius: 12, padding: 22, background: "#fff", marginBottom: 18 }, grid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }, actions: { display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }, temarioActions: { display: "flex", gap: 10, marginBottom: 10 },
+  primary: { border: 0, borderRadius: 8, padding: "9px 14px", background: "#172033", color: "#fff", fontWeight: 700, cursor: "pointer" }, secondary: { border: "1px solid #c8ced9", borderRadius: 8, padding: "9px 14px", background: "#fff", cursor: "pointer" }, danger: { border: "1px solid #c8ced9", borderRadius: 8, padding: "9px 14px", background: "#fff", color: "#8b1e1e", cursor: "pointer" }, status: { padding: 9, border: "1px solid #c8ced9", borderRadius: 7, marginBottom: 10 }, temario: { display: "block", width: "100%", boxSizing: "border-box", margin: "8px 0 12px", padding: 12, border: "1px solid #c8ced9", borderRadius: 8, fontFamily: "inherit", resize: "vertical" }, source: { marginBottom: 12, fontSize: 14, opacity: 0.7 }, error: { padding: 12, marginBottom: 14, borderRadius: 8, background: "#fff0f0", color: "#8b1e1e" }, success: { padding: 12, marginBottom: 14, borderRadius: 8, background: "#f0f6f0" }, muted: { opacity: 0.65, fontSize: 14 },
 };
