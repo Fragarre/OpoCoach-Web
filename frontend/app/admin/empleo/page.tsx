@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
+import { createClient } from "../../../lib/supabase/client";
 
 type Pendiente = {
   id: number;
@@ -72,10 +73,18 @@ const inicial: Formulario = {
 };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers = new Headers(init?.headers);
+  headers.set("Content-Type", "application/json");
+  if (session?.access_token) {
+    headers.set("Authorization", `Bearer ${session.access_token}`);
+  }
+
   const response = await fetch(`/api/empleo/admin/gestion/${path}`, {
     cache: "no-store",
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    headers,
   });
   const text = await response.text();
   let body: unknown = null;
