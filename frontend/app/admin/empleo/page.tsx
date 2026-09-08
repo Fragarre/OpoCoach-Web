@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
+// Centro de gestión de Empleo: revisión y mantenimiento privado.
 type Pendiente = {
   id: number; organismo_id: number; organismo_nombre: string | null; codigo_externo: string | null; denominacion: string;
   grupo: string | null; tipo_proceso: string | null; sistema_selectivo: string | null; turno: string | null; plazas: number | null;
