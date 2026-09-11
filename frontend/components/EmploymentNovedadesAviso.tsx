@@ -48,6 +48,7 @@ const TIPOS_PUBLICACION = [
   "adjudicacion",
   "adjudicación",
   "lista",
+  "seguimiento",
 ];
 
 function esPublicacionUtil(n: Novedad): boolean {
