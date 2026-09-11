@@ -11,7 +11,11 @@ export default function AuthenticatedEmploymentNav() {
   const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
-    if (pathname !== "/" && pathname !== "/empleo") return;
+    // En la aplicación principal solo añadimos el acceso a Empleo público.
+    // Dentro de /empleo la navegación propia del módulo ya incluye Tu Coach,
+    // Empleo público y Mi seguimiento; no debemos fabricar rutas inexistentes
+    // como /simulacros, /tests, /chat o /materiales.
+    if (pathname !== "/") return;
 
     let activo = true;
 
@@ -22,9 +26,7 @@ export default function AuthenticatedEmploymentNav() {
     }
 
     function actualizar(autenticado: boolean) {
-      const nav = pathname === "/empleo"
-        ? document.querySelector("main[style*='1280px'] header .headerActions")
-        : document.querySelector(".app-nav");
+      const nav = document.querySelector(".app-nav");
       if (!nav) return;
 
       const existente = document.getElementById(ID);
@@ -34,39 +36,13 @@ export default function AuthenticatedEmploymentNav() {
       }
       if (existente) return;
 
-      if (pathname === "/empleo") {
-        const wrapper = document.createElement("nav");
-        wrapper.id = ID;
-        wrapper.className = "employment-app-nav";
-        wrapper.setAttribute("aria-label", "Navegación de Tu Coach");
-        [
-          ["Inicio", "/"],
-          ["Simulacros", "/simulacros"],
-          ["Tests", "/tests"],
-          ["Chat", "/chat"],
-          ["Materiales", "/materiales"],
-        ].forEach(([texto, href]) => {
-          const enlace = document.createElement("a");
-          enlace.href = href;
-          enlace.textContent = texto;
-          wrapper.appendChild(enlace);
-        });
-        const empleo = document.createElement("a");
-        empleo.href = "/empleo";
-        empleo.textContent = "Empleo público";
-        empleo.setAttribute("aria-current", "page");
-        empleo.className = "employment-current";
-        wrapper.appendChild(empleo);
-        nav.prepend(wrapper);
-      } else {
-        const enlace = document.createElement("a");
-        enlace.id = ID;
-        enlace.className = "nav-link employment-nav-link";
-        enlace.href = "/empleo";
-        enlace.textContent = "Empleo público";
-        enlace.setAttribute("aria-label", "Ir a Empleo público");
-        nav.appendChild(enlace);
-      }
+      const enlace = document.createElement("a");
+      enlace.id = ID;
+      enlace.className = "nav-link employment-nav-link";
+      enlace.href = "/empleo";
+      enlace.textContent = "Empleo público";
+      enlace.setAttribute("aria-label", "Ir a Empleo público");
+      nav.appendChild(enlace);
     }
 
     void sincronizar();
