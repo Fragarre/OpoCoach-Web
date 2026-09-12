@@ -8,10 +8,12 @@ async function proxy(
   request: NextRequest,
   context: { params: Promise<{ path: string[] }> }
 ) {
-  const backendUrl = process.env.EMPLOYMENT_BACKEND_URL;
-  if (!backendUrl) {
+  const backendUrl = process.env.BACKEND_URL;
+  const employmentBackendUrl = process.env.EMPLOYMENT_BACKEND_URL;
+
+  if (!backendUrl && !employmentBackendUrl) {
     return Response.json(
-      { detail: "EMPLOYMENT_BACKEND_URL no está configurado." },
+      { detail: "No hay ningún backend de Empleo configurado." },
       { status: 500 }
     );
   }
@@ -29,11 +31,7 @@ async function proxy(
   }
 
   const { path } = await context.params;
-  const destino = new URL(path.join("/"), `${backendUrl.replace(/\/$/, "")}/`);
-
-  request.nextUrl.searchParams.forEach((value, key) => {
-    destino.searchParams.append(key, value);
-  });
+  const ruta = path.join("/");
 
   const headers = new Headers();
   const authorization = request.headers.get("authorization");
@@ -73,19 +71,65 @@ async function proxy(
     ? undefined
     : await request.text();
 
-  try {
-    const response = await fetch(destino, {
+  function construirDestino(base: string, prefijoEmpleo: boolean) {
+    const normalizada = base.replace(/\/$/, "");
+    const raiz = prefijoEmpleo ? `${normalizada}/empleo/` : `${normalizada}/`;
+    const destino = new URL(ruta, raiz);
+    request.nextUrl.searchParams.forEach((value, key) => {
+      destino.searchParams.append(key, value);
+    });
+    return destino;
+  }
+
+  async function solicitar(destino: URL) {
+    return fetch(destino, {
       method: request.method,
       headers,
       body,
       cache: "no-store",
     });
+  }
+
+  try {
+    // Ruta preferente: mismo backend Render que Tu Coach, bajo /empleo/*.
+    if (backendUrl) {
+      try {
+        const response = await solicitar(construirDestino(backendUrl, true));
+
+        // Durante la migración conservamos el servicio anterior como red de
+        // seguridad únicamente ante fallos del servidor unificado. Los 4xx se
+        // devuelven tal cual porque representan respuestas funcionales reales.
+        if (response.status < 500 || !employmentBackendUrl) {
+          return new Response(response.body, {
+            status: response.status,
+            headers: {
+              "content-type":
+                response.headers.get("content-type") ?? "application/json",
+              "x-employment-source": "unified",
+            },
+          });
+        }
+      } catch (error) {
+        if (!employmentBackendUrl) throw error;
+      }
+    }
+
+    // Fallback temporal al servicio standalone. Se retirará cuando el backend
+    // unificado y el cron hayan quedado validados extremo a extremo.
+    if (!employmentBackendUrl) {
+      throw new Error("Backend de Empleo no disponible.");
+    }
+
+    const response = await solicitar(
+      construirDestino(employmentBackendUrl, false)
+    );
 
     return new Response(response.body, {
       status: response.status,
       headers: {
         "content-type":
           response.headers.get("content-type") ?? "application/json",
+        "x-employment-source": "legacy-fallback",
       },
     });
   } catch (error) {
