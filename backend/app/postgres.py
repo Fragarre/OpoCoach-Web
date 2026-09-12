@@ -20,102 +20,71 @@ _pool: ConnectionPool | None = None
 _pool_lock = threading.Lock()
 
 
-def _resumir_json(data):
-    if isinstance(data, dict):
-        resumen = {"tipo": "dict", "claves": list(data.keys())[:40]}
-        for clave in ("content", "results", "resultado", "disposiciones"):
-            valor = data.get(clave)
-            if isinstance(valor, list):
-                resumen[clave + "_n"] = len(valor)
-                resumen[clave + "_muestra"] = [
-                    {k: item.get(k) for k in (
-                        "id", "codigoInsercion", "cve", "titulo", "organismo",
-                        "numeroDogv", "fechaPublicacion", "fechaPublicacionSumario",
-                        "fechaDisposicion", "tipoDocumento", "seccion", "estado"
-                    ) if k in item}
-                    for item in valor[:5] if isinstance(item, dict)
-                ]
-        for clave in ("totalElements", "totalPages", "number", "size", "fechaSumario", "urlPdf"):
-            if clave in data:
-                resumen[clave] = data[clave]
-        return resumen
-    if isinstance(data, list):
-        return {"tipo": "list", "n": len(data), "muestra": data[:3]}
-    return {"tipo": type(data).__name__, "valor": str(data)[:500]}
-
-
-def _llamar(url: str, *, body=None):
-    headers = {
+def _json_get(url: str):
+    req = urllib.request.Request(url, headers={
         "User-Agent": "Mozilla/5.0 NetReto-Diagnostico/1.0",
         "Accept": "application/json, text/plain, */*",
-    }
-    data = None
-    metodo = "GET"
-    if body is not None:
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-        metodo = "POST"
-    req = urllib.request.Request(url, data=data, headers=headers, method=metodo)
+    })
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
-            bruto = r.read(1000000)
-            texto = bruto.decode("utf-8", errors="replace")
-            entrada = {
-                "ok": True,
-                "status": r.status,
-                "final_url": r.geturl(),
-                "content_type": r.headers.get("Content-Type"),
-                "bytes": len(bruto),
-            }
-            try:
-                entrada["json"] = _resumir_json(json.loads(texto))
-            except Exception:
-                entrada["texto"] = texto[:1500]
-            return entrada
+            return {"ok": True, "status": r.status, "data": json.loads(r.read(1200000).decode("utf-8", errors="replace"))}
     except urllib.error.HTTPError as exc:
         try:
-            detalle = exc.read(5000).decode("utf-8", errors="replace")
+            detalle = exc.read(4000).decode("utf-8", errors="replace")
         except Exception:
             detalle = ""
-        return {"ok": False, "status": exc.code, "error": f"HTTPError: {exc}", "detalle": detalle[:3000]}
+        return {"ok": False, "status": exc.code, "error": str(exc), "detalle": detalle}
     except Exception as exc:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
-def _diagnostico_api_dogv() -> None:
+def _compactar(d: dict) -> dict:
+    claves = (
+        "id", "codigoInsercion", "cve", "titulo", "organismo", "numeroDogv",
+        "fechaPublicacion", "fechaPublicacionSumario", "fechaDisposicion",
+        "tipoDocumento", "seccion", "estado", "urlPdf", "texto"
+    )
+    out = {k: d.get(k) for k in claves if k in d}
+    if isinstance(out.get("texto"), str):
+        out["texto"] = out["texto"][:1200]
+    return out
+
+
+def _diagnostico_identidad_dogv() -> None:
     base = "https://dogv.gva.es/dogv-portal"
-    out = {"marca": "DIAGNOSTICO_API_DOGV", "pruebas": []}
+    out: dict = {"marca": "DIAGNOSTICO_IDENTIDAD_DOGV"}
+    fecha = _json_get(f"{base}/dogv?date=2026-07-08&lang=es_es")
+    if not fecha.get("ok"):
+        out["fecha_error"] = fecha
+        logging.error(json.dumps(out, ensure_ascii=False))
+        return
 
-    pruebas = [
-        ("latest", f"{base}/dogv/latest?lang=es_es", None),
-        ("fecha_2026_07_08", f"{base}/dogv?date=2026-07-08&lang=es_es", None),
-    ]
-    for nombre, url, body in pruebas:
-        out["pruebas"].append({"nombre": nombre, "url": url, "resultado": _llamar(url, body=body)})
+    disposiciones = fecha["data"].get("disposiciones", [])
+    candidatos = []
+    for d in disposiciones:
+        texto = " ".join(str(d.get(k) or "") for k in ("titulo", "organismo", "codigoInsercion"))
+        bajo = texto.lower()
+        if "a1-01" in bajo or "administración" in bajo and "pruebas selectivas" in bajo:
+            candidatos.append(_compactar(d))
+    out["dogv_2026_07_08_total"] = len(disposiciones)
+    out["candidatos"] = candidatos
 
-    for texto in ("A1-01", "1/26", "58/26"):
-        qs = urllib.parse.urlencode({
-            "lang": "es_es", "page": 0, "size": 10, "sort": "fechaPublicacion,desc"
-        })
-        url = f"{base}/dogv/search?{qs}"
-        body = {
-            "texto": texto,
-            "textoFijo": False,
-            "soloTitulo": False,
-            "soloVigentes": False,
-            "soloConsolidadas": False,
-        }
-        out["pruebas"].append({
-            "nombre": f"search_{texto}",
-            "url": url,
-            "body": body,
-            "resultado": _llamar(url, body=body),
-        })
+    detalles = []
+    for c in candidatos:
+        ident = c.get("id")
+        if not ident:
+            continue
+        r = _json_get(f"{base}/disposicion/{ident}?lang=es_es")
+        if r.get("ok") and isinstance(r.get("data"), dict):
+            detalles.append({"id": ident, "detalle": _compactar(r["data"]), "claves": list(r["data"].keys())[:80]})
+        else:
+            detalles.append({"id": ident, "error": r})
+    out["detalles"] = detalles
 
     logging.error(json.dumps(out, ensure_ascii=False))
 
 
-threading.Thread(target=_diagnostico_api_dogv, daemon=True).start()
+threading.Thread(target=_diagnostico_identidad_dogv, daemon=True).start()
 
 
 def obtener_database_url() -> str:
