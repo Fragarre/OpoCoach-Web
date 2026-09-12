@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
+import logging
 import os
 import threading
+import urllib.parse
+import urllib.request
 from contextlib import contextmanager
 from typing import Iterator
 
@@ -13,6 +17,64 @@ load_dotenv()
 
 _pool: ConnectionPool | None = None
 _pool_lock = threading.Lock()
+
+
+def _diagnostico_temporal_datos_abiertos_gva() -> None:
+    """Diagnóstico temporal y de solo lectura del catálogo CKAN de GVA."""
+    base = "https://dadesobertes.gva.es/es/api/3/action/package_search"
+    consultas = [
+        "oposiciones",
+        "procesos selectivos",
+        "empleo publico",
+        "funcion publica",
+        "seleccion personal",
+        "ocupacio publica",
+        "id_emp",
+    ]
+    salida: dict[str, object] = {
+        "marca": "DIAGNOSTICO_CKAN_GVA_FRANKFURT",
+        "consultas": [],
+    }
+    for consulta in consultas:
+        url = f"{base}?rows=10&q={urllib.parse.quote_plus(consulta)}"
+        entrada: dict[str, object] = {"q": consulta, "url": url}
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "NetReto-Empleo/0.1 (diagnostico)"},
+            )
+            with urllib.request.urlopen(req, timeout=12) as respuesta:
+                datos = json.loads(respuesta.read().decode("utf-8", errors="replace"))
+            resultado = datos.get("result") or {}
+            paquetes = resultado.get("results") or []
+            entrada["ok"] = bool(datos.get("success"))
+            entrada["count"] = resultado.get("count")
+            entrada["resultados"] = [
+                {
+                    "name": p.get("name"),
+                    "title": p.get("title"),
+                    "notes": str(p.get("notes") or "")[:220],
+                    "tags": [t.get("name") for t in (p.get("tags") or [])[:8]],
+                    "resources": [
+                        {
+                            "name": r.get("name"),
+                            "format": r.get("format"),
+                            "url": r.get("url"),
+                            "datastore_active": r.get("datastore_active"),
+                        }
+                        for r in (p.get("resources") or [])[:5]
+                    ],
+                }
+                for p in paquetes[:10]
+            ]
+        except Exception as exc:
+            entrada["ok"] = False
+            entrada["error"] = f"{type(exc).__name__}: {exc}"
+        salida["consultas"].append(entrada)
+    logging.getLogger("uvicorn.error").error(json.dumps(salida, ensure_ascii=False))
+
+
+_diagnostico_temporal_datos_abiertos_gva()
 
 
 def obtener_database_url() -> str:
