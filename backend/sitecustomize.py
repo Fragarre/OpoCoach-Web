@@ -59,6 +59,13 @@ if _activar_unificacion_empleo():
                 # Aísla el paquete `app` del backend principal: el hijo debe cargar
                 # exclusivamente el `app` de NetReto-Web-Empleo.
                 env["PYTHONPATH"] = str(_EMPLOYMENT_BACKEND_DIR)
+
+                # El servicio unificado comparte proceso Render, pero NO base de datos.
+                # Empleo conserva su PostgreSQL actual mediante una variable específica.
+                employment_database_url = os.getenv("EMPLOYMENT_DATABASE_URL", "").strip()
+                if employment_database_url:
+                    env["DATABASE_URL"] = employment_database_url
+
                 proceso = subprocess.Popen(
                     [
                         sys.executable,
