@@ -5,10 +5,8 @@ import logging
 import os
 import re
 import threading
-import urllib.parse
 import urllib.request
 from contextlib import contextmanager
-from html.parser import HTMLParser
 from typing import Iterator
 
 import psycopg
@@ -21,63 +19,37 @@ _pool: ConnectionPool | None = None
 _pool_lock = threading.Lock()
 
 
-class _Parser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.links: list[str] = []
-        self.scripts: list[str] = []
-    def handle_starttag(self, tag, attrs):
-        d = dict(attrs)
-        if tag == "a" and d.get("href"):
-            self.links.append(d["href"])
-        if tag == "script" and d.get("src"):
-            self.scripts.append(d["src"])
-
-
-def _leer(url: str, limite: int = 500000) -> tuple[str, str, int]:
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 NetReto-Diagnostico/1.0"})
-    with urllib.request.urlopen(req, timeout=15) as r:
-        return r.read(limite).decode("utf-8", errors="replace"), r.geturl(), r.status
-
-
-def _diagnostico_dogv_frontend() -> None:
-    resultado: dict = {"marca": "DIAGNOSTICO_FRONTEND_DOGV", "paginas": [], "scripts": []}
-    for url in [
-        "https://dogv.gva.es/dogv-portal-frontend/va",
-        "https://dogv.gva.es/va/portal",
-        "https://dogv.gva.es/es/portal",
-    ]:
-        e: dict = {"url": url}
-        try:
-            html, final, status = _leer(url)
-            e.update({"status": status, "final_url": final, "chars": len(html)})
-            p = _Parser(); p.feed(html)
-            e["links"] = [urllib.parse.urljoin(final, x) for x in p.links][:100]
-            e["scripts"] = [urllib.parse.urljoin(final, x) for x in p.scripts][:100]
-            e["fragmentos_api"] = sorted(set(re.findall(
-                r'[^\"\'\s<>]{0,100}(?:api|buscar|buscador|search|consulta|sumario|documento|diario|dogv)[^\"\'\s<>]{0,120}',
-                html, flags=re.I
-            )))[:120]
-            for src in e["scripts"][:30]:
-                if src in [x.get("url") for x in resultado["scripts"]]:
-                    continue
-                se = {"url": src}
-                try:
-                    js, jsfinal, jsstatus = _leer(src, 800000)
-                    se.update({"status": jsstatus, "final_url": jsfinal, "chars": len(js)})
-                    se["fragmentos"] = sorted(set(re.findall(
-                        r'[^\"\'\s<>]{0,120}(?:/api/|api/|search|buscar|consulta|sumario|documento|dogv)[^\"\'\s<>]{0,160}',
-                        js, flags=re.I
-                    )))[:160]
-                except Exception as exc:
-                    se["error"] = f"{type(exc).__name__}: {exc}"
-                resultado["scripts"].append(se)
-        except Exception as exc:
-            e["error"] = f"{type(exc).__name__}: {exc}"
-        resultado["paginas"].append(e)
+def _diagnostico_endpoints_dogv() -> None:
+    url = "https://dogv.gva.es/dogv-portal-frontend/main.4430d940a79e5c6fddac.js"
+    resultado: dict = {"marca": "DIAGNOSTICO_ENDPOINTS_DOGV", "url": url}
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 NetReto-Diagnostico/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            js = r.read(2000000).decode("utf-8", errors="replace")
+        resultado["chars"] = len(js)
+        urls = sorted(set(re.findall(r'https?://[^\"\'`\\\s<>]+', js)))
+        resultado["urls"] = [u for u in urls if any(k in u.lower() for k in ("dogv", "gva", "api", "document", "diari", "busc", "search"))][:200]
+        rutas = sorted(set(re.findall(r'[\"\'`](/[^\"\'`]{2,180})[\"\'`]', js)))
+        resultado["rutas"] = [p for p in rutas if any(k in p.lower() for k in ("api", "document", "diari", "sumari", "busc", "search", "portal"))][:250]
+        claves = ["http", "api", "documento", "document", "diario", "diari", "sumario", "sumari", "buscar", "busc", "cve"]
+        fragmentos = []
+        bajo = js.lower()
+        for clave in claves:
+            inicio = 0
+            n = 0
+            while n < 30:
+                pos = bajo.find(clave, inicio)
+                if pos < 0:
+                    break
+                fragmentos.append(js[max(0, pos-180):min(len(js), pos+320)])
+                inicio = pos + len(clave)
+                n += 1
+        resultado["fragmentos"] = fragmentos[:220]
+    except Exception as exc:
+        resultado["error"] = f"{type(exc).__name__}: {exc}"
     logging.error(json.dumps(resultado, ensure_ascii=False))
 
-threading.Thread(target=_diagnostico_dogv_frontend, daemon=True).start()
+threading.Thread(target=_diagnostico_endpoints_dogv, daemon=True).start()
 
 
 def obtener_database_url() -> str:
