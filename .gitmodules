@@ -1,0 +1,3 @@
+[submodule "backend/employment_service"]
+	path = backend/employment_service
+	url = https://github.com/Fragarre/NetReto-Web-Empleo.git
