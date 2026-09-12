@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import atexit
 import os
 import subprocess
 import sys
@@ -37,6 +38,17 @@ if _activar_unificacion_empleo():
             super().__init__(*args, **kwargs)
             self.state.employment_process = None
 
+            def detener_empleo() -> None:
+                proceso = getattr(self.state, "employment_process", None)
+                if proceso is None or proceso.poll() is not None:
+                    return
+                proceso.terminate()
+                try:
+                    proceso.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proceso.kill()
+                    proceso.wait(timeout=5)
+
             def iniciar_empleo() -> None:
                 if not _EMPLOYMENT_BACKEND_DIR.exists():
                     raise RuntimeError(
@@ -44,6 +56,8 @@ if _activar_unificacion_empleo():
                     )
 
                 env = os.environ.copy()
+                # Aísla el paquete `app` del backend principal: el hijo debe cargar
+                # exclusivamente el `app` de NetReto-Web-Empleo.
                 env["PYTHONPATH"] = str(_EMPLOYMENT_BACKEND_DIR)
                 proceso = subprocess.Popen(
                     [
@@ -60,6 +74,7 @@ if _activar_unificacion_empleo():
                     env=env,
                 )
                 self.state.employment_process = proceso
+                atexit.register(detener_empleo)
 
                 limite = time.monotonic() + 45
                 ultimo_error = ""
@@ -77,22 +92,11 @@ if _activar_unificacion_empleo():
                         ultimo_error = f"{type(exc).__name__}: {exc}"
                     time.sleep(0.5)
 
-                proceso.terminate()
+                detener_empleo()
                 raise RuntimeError(
                     "El backend interno de Empleo no respondió a /health durante el arranque. "
                     f"Último error: {ultimo_error}"
                 )
-
-            def detener_empleo() -> None:
-                proceso = getattr(self.state, "employment_process", None)
-                if proceso is None or proceso.poll() is not None:
-                    return
-                proceso.terminate()
-                try:
-                    proceso.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    proceso.kill()
-                    proceso.wait(timeout=5)
 
             async def reenviar(request: Request, path: str) -> Response:
                 destino = f"{_EMPLOYMENT_BASE}/{path.lstrip('/')}"
@@ -143,7 +147,11 @@ if _activar_unificacion_empleo():
             metodos = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
             self.api_route("/empleo", methods=metodos, include_in_schema=False)(proxy_empleo_raiz)
             self.api_route("/empleo/{path:path}", methods=metodos, include_in_schema=False)(proxy_empleo)
-            self.add_event_handler("startup", iniciar_empleo)
-            self.add_event_handler("shutdown", detener_empleo)
+
+            # Se arranca al construir la aplicación, no mediante los hooks antiguos
+            # de Starlette/FastAPI (retirados en las versiones actuales). Si el hijo
+            # no llega a estar sano, la importación falla y Render conserva el deploy
+            # anterior.
+            iniciar_empleo()
 
     fastapi.FastAPI = UnifiedFastAPI
