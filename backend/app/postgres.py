@@ -72,3 +72,61 @@ def comprobar_postgres() -> dict[str, str]:
         "database": str(database),
         "postgres_version": str(version),
     }
+
+
+# Diagnóstico temporal y aislado: compara la conectividad de Frankfurt con GVA.
+# No modifica BD ni comportamiento de la API; solo escribe una línea en logs.
+def _diagnostico_temporal_gva() -> None:
+    import json
+    import socket
+    import ssl
+    import urllib.request
+
+    host = "sede.gva.es"
+    resultado: dict[str, object] = {
+        "marca": "DIAGNOSTICO_GVA_FRANKFURT",
+        "host": host,
+    }
+
+    try:
+        info = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+        resultado["dns"] = sorted({item[4][0] for item in info})
+    except Exception as exc:
+        resultado["dns_error"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        with socket.create_connection((host, 443), timeout=8.0) as sock:
+            resultado["tcp_443"] = "ok"
+            contexto = ssl.create_default_context()
+            with contexto.wrap_socket(sock, server_hostname=host) as tls:
+                resultado["tls"] = {
+                    "ok": True,
+                    "version": tls.version(),
+                    "cipher": tls.cipher()[0] if tls.cipher() else None,
+                }
+    except Exception as exc:
+        resultado["tcp_tls_error"] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        req = urllib.request.Request(
+            "https://sede.gva.es/es/cercador-ocupacio-publica?tipoOrganismo=1",
+            headers={
+                "User-Agent": "NetReto-Empleo/0.1 (https://netexamenes.com)",
+                "Accept-Language": "es-ES,es;q=0.9",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=12.0) as respuesta:
+            muestra = respuesta.read(256)
+            resultado["http"] = {
+                "ok": True,
+                "status": getattr(respuesta, "status", None),
+                "url_final": respuesta.geturl(),
+                "bytes_muestra": len(muestra),
+            }
+    except Exception as exc:
+        resultado["http_error"] = f"{type(exc).__name__}: {exc}"
+
+    print(json.dumps(resultado, ensure_ascii=False), flush=True)
+
+
+threading.Thread(target=_diagnostico_temporal_gva, daemon=True).start()
