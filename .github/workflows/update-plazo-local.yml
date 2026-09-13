@@ -1,0 +1,26 @@
+name: Update plazo local
+on:
+  push:
+    paths: ['.github/workflows/update-plazo-local.yml']
+permissions:
+  contents: write
+jobs:
+  update:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Actualizar Empleo
+        run: |
+          cd backend/employment_service
+          git fetch origin main
+          git checkout f1080dc260f14215f97ddf76809a3734645da3fc
+          cd ../..
+          git add backend/employment_service
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Corregir plazos de inscripción locales enlazados al BOE"
+          git push
