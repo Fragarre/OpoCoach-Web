@@ -1,0 +1,35 @@
+name: Update calendario plazos
+
+on:
+  push:
+    paths:
+      - '.github/workflows/update-calendario-plazos.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Actualizar submódulo Empleo
+        shell: bash
+        run: |
+          cd backend/employment_service
+          git fetch origin main
+          git checkout bd2ab929b803b39ac5ed4762803ae2c524e71809
+          cd ../..
+          git add backend/employment_service
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git diff --cached --quiet && exit 0
+          git commit -m "Calcular cierre exacto de plazos hábiles verificados"
+          git push
