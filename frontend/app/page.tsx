@@ -501,6 +501,7 @@ const [materialTipo, setMaterialTipo] = useState<
       setSession(nextSession);
       if (!nextSession) {
         setMe(null);
+        setEstadoSuscripcion(null);
         setConvocatorias([]);
         setMisSimulacros([]);
         setMisTests([]);
@@ -517,19 +518,35 @@ const [materialTipo, setMaterialTipo] = useState<
   useEffect(() => {
     if (!session) return;
 
+    let cancelado = false;
+
+    // La identidad y la suscripción son datos críticos de cabecera. Se cargan
+    // aparte para que una consulta lenta de simulacros, tests o convocatorias
+    // no deje la cabecera en un estado aparente de usuario anónimo.
     Promise.all([
       apiFetch<Me>("api/v1/me"),
+      apiFetch<EstadoSuscripcion>("api/v1/billing/subscription"),
+    ])
+      .then(([usuario, suscripcion]) => {
+        if (cancelado) return;
+        setMe(usuario);
+        setEstadoSuscripcion(suscripcion);
+      })
+      .catch((err) => {
+        if (cancelado) return;
+        setError(err instanceof Error ? err.message : String(err));
+      });
+
+    Promise.all([
       apiFetch<Convocatoria[]>("api/v1/convocatorias"),
       apiFetch<SimulacroListado[]>("api/v1/simulacros"),
       apiFetch<SimulacroListado[]>("api/v1/tests"),
-      apiFetch<EstadoSuscripcion>("api/v1/billing/subscription"),
     ])
-      .then(([usuario, lista, guardados, tests, suscripcion]) => {
-        setMe(usuario);
+      .then(([lista, guardados, tests]) => {
+        if (cancelado) return;
         setConvocatorias(lista);
         setMisSimulacros(guardados);
         setMisTests(tests);
-        setEstadoSuscripcion(suscripcion);
         if (convocatoriaSimulacroId === null && lista.length > 0) {
           setConvocatoriaSimulacroId(lista[0].id);
         }
@@ -545,8 +562,13 @@ const [materialTipo, setMaterialTipo] = useState<
         setError("");
       })
       .catch((err) => {
+        if (cancelado) return;
         setError(err instanceof Error ? err.message : String(err));
       });
+
+    return () => {
+      cancelado = true;
+    };
   }, [session]);
 
   useEffect(() => {
@@ -2251,27 +2273,34 @@ async function descargarMaterialPdf() {
             </nav>
 
             <div className="account-area">
-              {estadoSuscripcion?.suscrito && (
-                <button
-                  type="button"
-                  className="plan-chip"
-                  disabled={ocupado}
-                  onClick={abrirPortalSuscripcion}
-                  title="Gestionar suscripción"
-                >
-                  {estadoSuscripcion.pago_pendiente
-                    ? "Pago pendiente"
-                    : estadoSuscripcion.cancelacion_programada
-                      ? "Plan activo · baja programada"
-                      : "Plan activo"}
-                </button>
+              {me && estadoSuscripcion ? (
+                <>
+                  {estadoSuscripcion.suscrito && (
+                    <button
+                      type="button"
+                      className="plan-chip"
+                      disabled={ocupado}
+                      onClick={abrirPortalSuscripcion}
+                      title="Gestionar suscripción"
+                    >
+                      {estadoSuscripcion.pago_pendiente
+                        ? "Pago pendiente"
+                        : estadoSuscripcion.cancelacion_programada
+                          ? "Plan activo · baja programada"
+                          : "Plan activo"}
+                    </button>
+                  )}
+                  <div className="account-identity">
+                    <span className="account-avatar">{inicialUsuario}</span>
+                    <span className="account-email">{me.email}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="account-identity" aria-live="polite" aria-busy="true">
+                  <span className="loading-spinner" aria-hidden="true" />
+                  <span className="account-email">Cargando cuenta…</span>
+                </div>
               )}
-              <div className="account-identity">
-                <span className="account-avatar">{inicialUsuario}</span>
-                <span className="account-email">
-                  {me?.email ?? "Usuario"}
-                </span>
-              </div>
               <button
                 type="button"
                 className="logout-button"
