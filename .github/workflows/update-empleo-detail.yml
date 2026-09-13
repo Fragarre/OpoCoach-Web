@@ -1,0 +1,71 @@
+name: Update Empleo detail
+
+on:
+  push:
+    paths:
+      - '.github/workflows/update-empleo-detail.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Actualizar submódulo Empleo
+        shell: bash
+        run: |
+          cd backend/employment_service
+          git fetch origin main
+          git checkout 75f23f6bbcba84ac43ba85013c1eada0c7861f98
+          cd ../..
+          git add backend/employment_service
+      - name: Corregir detalle de convocatoria
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('frontend/app/empleo/proceso/[id]/page.tsx')
+          s = p.read_text(encoding='utf-8')
+
+          old = 'type Proceso = { id:number; organismo_id:number; organismo_nombre:string; codigo_externo:string|null; identificador_estable:string|null; denominacion:string; cuerpo_escala:string|null; grupo:string|null; subgrupo:string|null; tipo_proceso:string|null; sistema_selectivo:string|null; turno:string|null; plazas:number|null; estado:string|null; es_oportunidad:boolean; anio_oep:number|null; anio_convocatoria:number|null; fecha_convocatoria:string|null; fecha_apertura:string|null; fecha_cierre:string|null; fecha_examen:string|null; lugar_examen:string|null; ultima_publicacion_at:string|null; datos_json:unknown };'
+          new = 'type Proceso = { id:number; organismo_id:number; organismo_nombre:string; codigo_externo:string|null; identificador_estable:string|null; denominacion:string; cuerpo_escala:string|null; grupo:string|null; subgrupo:string|null; tipo_proceso:string|null; sistema_selectivo:string|null; turno:string|null; plazas:number|null; estado:string|null; es_oportunidad:boolean; anio_oep:number|null; anio_convocatoria:number|null; fecha_convocatoria:string|null; fecha_apertura:string|null; fecha_cierre:string|null; fecha_examen:string|null; lugar_examen:string|null; ultima_publicacion_at:string|null; datos_json:unknown; estado_inscripcion:string|null; inscripcion:{codigo:string;fecha_apertura?:string|null;fecha_cierre?:string|null;fecha_referencia?:string|null;dias_habiles?:number|null;literal?:string|null}|null };'
+          if old not in s:
+              raise SystemExit('No se encontró type Proceso')
+          s = s.replace(old, new, 1)
+
+          anchor = 'function identificacion(p:Proceso){const texto=p.denominacion||"";const m=texto.match(/\\b(?:Convocatoria|Convocat[oò]ria)\\s+([A-Z]?\\s*\\d{1,3}\\/\\d{2,4}[A-Z]?)\\b/i);if(m)return m[1].replace(/\\s+/g,"").toUpperCase();const mAut=texto.match(/\\b(AUT\\s*\\d{1,3}\\/\\d{2,4})\\b/i);if(mAut)return mAut[1].replace(/\\s+/g,"").toUpperCase();return null}\n'
+          addition = anchor + '''function textoInscripcion(p:Proceso){\n  const i=p.inscripcion;\n  if(!i)return "Plazo de inscripción no determinado";\n  if(i.codigo==="ABIERTO"&&i.fecha_cierre)return `Inscripción abierta hasta ${fecha(i.fecha_cierre)}`;\n  if(i.codigo==="CERRADO"&&i.fecha_cierre)return `Inscripción cerrada el ${fecha(i.fecha_cierre)}`;\n  if(i.codigo==="PENDIENTE_APERTURA"&&i.fecha_apertura)return `Inscripción pendiente · abre el ${fecha(i.fecha_apertura)}`;\n  if(i.codigo==="PENDIENTE_BOE")return "Inscripción pendiente de convocatoria en BOE";\n  if(i.codigo==="PLAZO_LITERAL"){\n    const inicio=i.fecha_referencia?fecha(i.fecha_referencia):null;\n    if(i.dias_habiles&&inicio)return `Plazo: ${i.dias_habiles} días hábiles desde ${inicio}`;\n    return i.literal||"Plazo de solicitud publicado";\n  }\n  return "Plazo de inscripción no determinado";\n}\n'''
+          if anchor not in s:
+              raise SystemExit('No se encontró identificacion')
+          s = s.replace(anchor, addition, 1)
+
+          old = 'const[m,procesos,p,c]=await Promise.all([getJson<Me>("me",token),getJson<Proceso[]>("procesos",token),getJson<Publicacion[]>(`procesos/${id}/publicaciones`,token),getJson<Cambio[]>(`procesos/${id}/cambios`,token)]);if(!activo)return;const encontrado=procesos.find(x=>x.id===Number(id)&&x.es_oportunidad);if(!encontrado)throw new Error("La convocatoria no está disponible en el catálogo.");setMe(m);setProceso(encontrado);setPublicaciones(p);setCambios(c)'
+          new = 'const[m,encontrado,p,c]=await Promise.all([getJson<Me>("me",token),getJson<Proceso>(`procesos/${id}`,token),getJson<Publicacion[]>(`procesos/${id}/publicaciones`,token),getJson<Cambio[]>(`procesos/${id}/cambios`,token)]);if(!activo)return;if(!encontrado.es_oportunidad)throw new Error("La convocatoria no está disponible.");setMe(m);setProceso(encontrado);setPublicaciones(p);setCambios(c)'
+          if old not in s:
+              raise SystemExit('No se encontró carga del detalle')
+          s = s.replace(old, new, 1)
+
+          old = '<div><strong>Inscripción</strong><div>{fecha(proceso.fecha_apertura)}</div></div><div><strong>Cierre</strong><div>{fecha(proceso.fecha_cierre)}</div></div>'
+          new = '<div><strong>Inscripción</strong><div>{textoInscripcion(proceso)}</div></div><div><strong>Apertura</strong><div>{fecha(proceso.fecha_apertura)}</div></div>'
+          if old not in s:
+              raise SystemExit('No se encontró bloque de inscripción')
+          s = s.replace(old, new, 1)
+
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/employment_service 'frontend/app/empleo/proceso/[id]/page.tsx'
+          git diff --cached --quiet && exit 0
+          git commit -m "Completar detalle y seguimiento de Empleo"
+          git push
