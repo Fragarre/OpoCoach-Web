@@ -1,0 +1,233 @@
+name: Fix home account loading
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-home-account-loading.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply targeted loading-state fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("frontend/app/page.tsx")
+          text = path.read_text(encoding="utf-8")
+
+          old_effect = '''  useEffect(() => {
+    if (!session) return;
+
+    Promise.all([
+      apiFetch<Me>("api/v1/me"),
+      apiFetch<Convocatoria[]>("api/v1/convocatorias"),
+      apiFetch<SimulacroListado[]>("api/v1/simulacros"),
+      apiFetch<SimulacroListado[]>("api/v1/tests"),
+      apiFetch<EstadoSuscripcion>("api/v1/billing/subscription"),
+    ])
+      .then(([usuario, lista, guardados, tests, suscripcion]) => {
+        setMe(usuario);
+        setConvocatorias(lista);
+        setMisSimulacros(guardados);
+        setMisTests(tests);
+        setEstadoSuscripcion(suscripcion);
+        if (convocatoriaSimulacroId === null && lista.length > 0) {
+          setConvocatoriaSimulacroId(lista[0].id);
+        }
+        if (convocatoriaTestId === null && lista.length > 0) {
+          setConvocatoriaTestId(lista[0].id);
+        }
+        if (chatConvocatoriaId === null && lista.length > 0) {
+          setChatConvocatoriaId(lista[0].id);
+        }
+        if (materialConvocatoriaId === null && lista.length > 0) {
+          setMaterialConvocatoriaId(lista[0].id);
+        }
+        setError("");
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : String(err));
+      });
+  }, [session]);
+'''
+
+          new_effect = '''  useEffect(() => {
+    if (!session) return;
+
+    let cancelado = false;
+
+    // La identidad y la suscripción son datos críticos de cabecera. Se cargan
+    // aparte para que una consulta lenta de simulacros, tests o convocatorias
+    // no deje la cabecera en un estado aparente de usuario anónimo.
+    Promise.all([
+      apiFetch<Me>("api/v1/me"),
+      apiFetch<EstadoSuscripcion>("api/v1/billing/subscription"),
+    ])
+      .then(([usuario, suscripcion]) => {
+        if (cancelado) return;
+        setMe(usuario);
+        setEstadoSuscripcion(suscripcion);
+      })
+      .catch((err) => {
+        if (cancelado) return;
+        setError(err instanceof Error ? err.message : String(err));
+      });
+
+    Promise.all([
+      apiFetch<Convocatoria[]>("api/v1/convocatorias"),
+      apiFetch<SimulacroListado[]>("api/v1/simulacros"),
+      apiFetch<SimulacroListado[]>("api/v1/tests"),
+    ])
+      .then(([lista, guardados, tests]) => {
+        if (cancelado) return;
+        setConvocatorias(lista);
+        setMisSimulacros(guardados);
+        setMisTests(tests);
+        if (convocatoriaSimulacroId === null && lista.length > 0) {
+          setConvocatoriaSimulacroId(lista[0].id);
+        }
+        if (convocatoriaTestId === null && lista.length > 0) {
+          setConvocatoriaTestId(lista[0].id);
+        }
+        if (chatConvocatoriaId === null && lista.length > 0) {
+          setChatConvocatoriaId(lista[0].id);
+        }
+        if (materialConvocatoriaId === null && lista.length > 0) {
+          setMaterialConvocatoriaId(lista[0].id);
+        }
+        setError("");
+      })
+      .catch((err) => {
+        if (cancelado) return;
+        setError(err instanceof Error ? err.message : String(err));
+      });
+
+    return () => {
+      cancelado = true;
+    };
+  }, [session]);
+'''
+
+          if old_effect not in text:
+              raise SystemExit("No se encontró el bloque de carga inicial esperado; no se modifica nada.")
+          text = text.replace(old_effect, new_effect, 1)
+
+          old_logout = '''        setMe(null);
+        setConvocatorias([]);
+        setMisSimulacros([]);
+        setMisTests([]);
+'''
+          new_logout = '''        setMe(null);
+        setEstadoSuscripcion(null);
+        setConvocatorias([]);
+        setMisSimulacros([]);
+        setMisTests([]);
+'''
+          if old_logout not in text:
+              raise SystemExit("No se encontró el bloque de limpieza de sesión esperado; no se modifica nada.")
+          text = text.replace(old_logout, new_logout, 1)
+
+          old_account = '''            <div className="account-area">
+              {estadoSuscripcion?.suscrito && (
+                <button
+                  type="button"
+                  className="plan-chip"
+                  disabled={ocupado}
+                  onClick={abrirPortalSuscripcion}
+                  title="Gestionar suscripción"
+                >
+                  {estadoSuscripcion.pago_pendiente
+                    ? "Pago pendiente"
+                    : estadoSuscripcion.cancelacion_programada
+                      ? "Plan activo · baja programada"
+                      : "Plan activo"}
+                </button>
+              )}
+              <div className="account-identity">
+                <span className="account-avatar">{inicialUsuario}</span>
+                <span className="account-email">
+                  {me?.email ?? "Usuario"}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="logout-button"
+                onClick={cerrarSesion}
+                title="Cerrar sesión"
+              >
+                Salir
+              </button>
+            </div>
+'''
+
+          new_account = '''            <div className="account-area">
+              {me && estadoSuscripcion ? (
+                <>
+                  {estadoSuscripcion.suscrito && (
+                    <button
+                      type="button"
+                      className="plan-chip"
+                      disabled={ocupado}
+                      onClick={abrirPortalSuscripcion}
+                      title="Gestionar suscripción"
+                    >
+                      {estadoSuscripcion.pago_pendiente
+                        ? "Pago pendiente"
+                        : estadoSuscripcion.cancelacion_programada
+                          ? "Plan activo · baja programada"
+                          : "Plan activo"}
+                    </button>
+                  )}
+                  <div className="account-identity">
+                    <span className="account-avatar">{inicialUsuario}</span>
+                    <span className="account-email">{me.email}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="account-identity" aria-live="polite" aria-busy="true">
+                  <span className="loading-spinner" aria-hidden="true" />
+                  <span className="account-email">Cargando cuenta…</span>
+                </div>
+              )}
+              <button
+                type="button"
+                className="logout-button"
+                onClick={cerrarSesion}
+                title="Cerrar sesión"
+              >
+                Salir
+              </button>
+            </div>
+'''
+
+          if old_account not in text:
+              raise SystemExit("No se encontró el bloque de cabecera esperado; no se modifica nada.")
+          text = text.replace(old_account, new_account, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          if git diff --quiet -- frontend/app/page.tsx; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/app/page.tsx
+          git commit -m "Corregir carga de usuario y suscripción en inicio"
+          git push origin main
