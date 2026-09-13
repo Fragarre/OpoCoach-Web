@@ -15,6 +15,15 @@ type Proceso = {
   fecha_apertura: string | null; fecha_cierre: string | null; fecha_examen: string | null;
   lugar_examen: string | null; ultima_publicacion_at: string | null; datos_json: unknown;
   url_oficial: string | null;
+  estado_inscripcion: string | null;
+  inscripcion: {
+    codigo: string;
+    fecha_apertura?: string | null;
+    fecha_cierre?: string | null;
+    fecha_referencia?: string | null;
+    dias_habiles?: number | null;
+    literal?: string | null;
+  } | null;
 };
 type Suscripcion = { id: number; proceso_id: number };
 type Vista = "RESUMEN" | "AYUNTAMIENTOS" | "DETALLE";
@@ -34,11 +43,25 @@ function capitalizarMunicipio(valor:string){return valor?valor.charAt(0).toLocal
 function CargandoOverlay(){return <><div role="status" aria-live="polite" aria-busy="true" style={styles.overlay}><div style={styles.overlayBox}><div style={styles.spinner}/><div>Cargando Empleo…</div></div></div><style>{`@keyframes empleo-spin { to { transform: rotate(360deg); } }`}</style></>}
 function SpinnerInline(){return <><span aria-hidden="true" style={styles.inlineSpinner}/><style>{`@keyframes empleo-spin { to { transform: rotate(360deg); } }`}</style></>}
 function plazasTotales(lista:Proceso[]){return lista.reduce((total,p)=>total+(p.plazas??0),0)}
+function textoInscripcion(p:Proceso){
+ const i=p.inscripcion;
+ if(!i)return"Plazo de inscripción no determinado";
+ if(i.codigo==="ABIERTO"&&i.fecha_cierre)return`Inscripción abierta hasta ${fecha(i.fecha_cierre)}`;
+ if(i.codigo==="CERRADO"&&i.fecha_cierre)return`Inscripción cerrada el ${fecha(i.fecha_cierre)}`;
+ if(i.codigo==="PENDIENTE_APERTURA"&&i.fecha_apertura)return`Inscripción pendiente · abre el ${fecha(i.fecha_apertura)}`;
+ if(i.codigo==="PENDIENTE_BOE")return"Inscripción pendiente de convocatoria en BOE";
+ if(i.codigo==="PLAZO_LITERAL"){
+   const inicio=i.fecha_referencia?fecha(i.fecha_referencia):null;
+   if(i.dias_habiles&&inicio)return`Plazo: ${i.dias_habiles} días hábiles desde ${inicio}`;
+   return i.literal||"Plazo de solicitud publicado";
+ }
+ return"Plazo de inscripción no determinado";
+}
 
 export default function EmpleoPage(){
  const supabase=useMemo(()=>createClient(),[]); const lockRef=useRef(false);
  const [me,setMe]=useState<Me|null>(null),[organismos,setOrganismos]=useState<Organismo[]>([]),[procesosTodos,setProcesosTodos]=useState<Proceso[]>([]),[procesos,setProcesos]=useState<Proceso[]>([]),[suscripciones,setSuscripciones]=useState<Suscripcion[]>([]),[seleccion,setSeleccion]=useState<Organismo|null>(null);
- const [vista,setVista]=useState<Vista>("RESUMEN"),[cargando,setCargando]=useState(true),[procesando,setProcesando]=useState(false),[error,setError]=useState(""),[busy,setBusy]=useState<number|null>(null);
+ const [vista,setVista]=useState<Vista>("RESUMEN"),[cargando,setCargando]=useState(true),[procesando,setProcesando]=useState(false),[error,setError]=useState(""),[busy,setBusy]=useState<number|null>(null),[soloInscripcionAbierta,setSoloInscripcionAbierta]=useState(false);
  const gva=organismos.find(o=>o.id===1)||null,diputacion=organismos.find(o=>o.id===2)||null;
  const ayuntamientos=organismos.filter(o=>o.tipo==="AYUNTAMIENTO"&&(o.provincia||"").toLowerCase()==="valencia");
  const idsAyuntamientos=new Set(ayuntamientos.map(o=>o.id));
@@ -47,6 +70,7 @@ export default function EmpleoPage(){
  const procesosAyuntamientos=procesosTodos.filter(p=>idsAyuntamientos.has(p.organismo_id));
  const totalOportunidades=procesosTodos.length;
  const totalPlazas=plazasTotales(procesosTodos);
+ const procesosFiltrados=soloInscripcionAbierta?procesos.filter(p=>p.estado_inscripcion==="ABIERTO"):procesos;
  const resumenMunicipios=ayuntamientos.map(o=>{const lista=procesosTodos.filter(p=>p.organismo_id===o.id);return{organismo:o,nombre:o.municipio||o.nombre.replace(/^Ayuntamiento de\s+/i,"").trim(),oportunidades:lista.length,plazas:plazasTotales(lista)}}).filter(x=>x.oportunidades>0).sort((a,b)=>a.nombre.localeCompare(b.nombre,"es"));
  async function cargar(){setCargando(true);setError("");try{const token=await getAccessToken(supabase);const[m,o,p,s]=await Promise.all([getJson<Me>("me",token),getJson<Organismo[]>("organismos",token),getJson<Proceso[]>("procesos",token),getJson<Suscripcion[]>("suscripciones",token)]);const visibles=o.filter(x=>x.id===1||x.id===2||(x.tipo==="AYUNTAMIENTO"&&(x.provincia||"").toLowerCase()==="valencia"));const oportunidades=p.filter(x=>x.es_oportunidad&&visibles.some(org=>org.id===x.organismo_id));setMe(m);setOrganismos(visibles);setProcesosTodos(oportunidades);setProcesos(oportunidades);setSuscripciones(s)}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setCargando(false)}}
  useEffect(()=>{void cargar()},[supabase]);
@@ -69,7 +93,7 @@ export default function EmpleoPage(){
 
  {vista==="AYUNTAMIENTOS"&&<section style={styles.panel}><div style={styles.sectionHead}><div><button type="button" onClick={volverResumen} style={styles.backButton}>← Volver al resumen</button><h2 style={styles.h2}>Ayuntamientos de la provincia de Valencia</h2><p style={styles.muted}>{procesosAyuntamientos.length} oportunidades · {plazasTotales(procesosAyuntamientos)} plazas</p></div></div>{resumenMunicipios.length===0?<p>No hay oportunidades municipales activas.</p>:<div style={styles.municipalityGrid}>{resumenMunicipios.map(item=><button type="button" key={item.organismo.id} disabled={procesando} onClick={()=>void seleccionarOrganismo(item.organismo)} style={styles.municipalityCard}><strong>{capitalizarMunicipio(item.nombre)}</strong><div style={styles.municipalityMetrics}><span><b>{item.oportunidades}</b> {item.oportunidades===1?"oportunidad":"oportunidades"}</span><span><b>{item.plazas}</b> {item.plazas===1?"plaza":"plazas"}</span></div><span style={styles.summaryAction}>Ver detalle →</span></button>)}</div>}</section>}
 
- {vista==="DETALLE"&&<section style={styles.panel}><div style={styles.sectionHead}><div><button type="button" onClick={()=>{if(seleccion?.tipo==="AYUNTAMIENTO")setVista("AYUNTAMIENTOS");else volverResumen()}} style={styles.backButton}>← {seleccion?.tipo==="AYUNTAMIENTO"?"Volver a ayuntamientos":"Volver al resumen"}</button><h2 style={styles.h2}>{seleccion?.nombre||"Convocatorias administrativas"}</h2><p style={styles.muted}>{procesos.length} oportunidades · {plazasTotales(procesos)} plazas</p></div></div>{procesos.length===0?<p>No hay convocatorias administrativas activas.</p>:<div style={styles.cards}>{procesos.map(p=>{const idConv=identificacion(p),seguida=suscripciones.some(s=>s.proceso_id===p.id);return <article key={p.id} style={styles.card}><div style={styles.cardLayout}><button style={styles.cardButton} onClick={()=>{window.location.href=`/empleo/proceso/${p.id}`}}><div style={styles.cardTop}><span style={styles.badge}>{p.estado||"SIN ESTADO"}</span><span>{p.plazas!=null?`${p.plazas} ${p.plazas===1?"plaza":"plazas"}`:"Plazas no definidas"}</span></div><div style={styles.cardOrg}>{p.organismo_nombre}</div><h3 style={styles.cardTitle}>{idConv?`Convocatoria ${idConv}`:p.tipo_proceso||"Proceso selectivo"}</h3><p style={styles.cardSummary}>{resumen(p)}</p><p style={styles.muted}>{p.tipo_proceso||"Proceso selectivo"}{p.turno?` · ${p.turno}`:""}{p.grupo?` · ${p.grupo}`:""}</p><div style={styles.meta}>{p.fecha_apertura?`Inscripción: ${fecha(p.fecha_apertura)}`:"Inscripción no indicada"}{p.fecha_cierre?` · Cierre: ${fecha(p.fecha_cierre)}`:""}</div></button><div style={styles.cardActions}><button style={seguida?styles.follow:styles.primary} disabled={busy===p.id||procesando} onClick={()=>void toggleSeguimiento(p.id,!seguida)}>{busy===p.id?<span style={styles.busyLabel}><SpinnerInline/>Guardando…</span>:seguida?"Siguiendo":"Seguir"}</button>{p.url_oficial&&<a href={p.url_oficial} target="_blank" rel="noopener noreferrer" style={styles.officialLink}>Ver convocatoria oficial ↗</a>}{p.coaching_disponible?<span style={styles.coachingAvailable}>Preparación disponible en Tu Coach</span>:<span style={styles.coachingPending}>Preparación aún no disponible</span>}</div></div></article>})}</div>}</section>}
+ {vista==="DETALLE"&&<section style={styles.panel}><div style={styles.sectionHead}><div><button type="button" onClick={()=>{if(seleccion?.tipo==="AYUNTAMIENTO")setVista("AYUNTAMIENTOS");else volverResumen()}} style={styles.backButton}>← {seleccion?.tipo==="AYUNTAMIENTO"?"Volver a ayuntamientos":"Volver al resumen"}</button><h2 style={styles.h2}>{seleccion?.nombre||"Convocatorias administrativas"}</h2><p style={styles.muted}>{procesos.length} oportunidades · {plazasTotales(procesos)} plazas</p><label style={{display:"inline-flex",alignItems:"center",gap:8,marginTop:10,fontSize:14,fontWeight:700,cursor:"pointer"}}><input type="checkbox" checked={soloInscripcionAbierta} onChange={e=>setSoloInscripcionAbierta(e.target.checked)}/> Puedo inscribirme ahora</label></div></div>{procesosFiltrados.length===0?<p>{soloInscripcionAbierta?"No hay convocatorias con inscripción abierta confirmada.":"No hay convocatorias administrativas activas."}</p>:<div style={styles.cards}>{procesosFiltrados.map(p=>{const idConv=identificacion(p),seguida=suscripciones.some(s=>s.proceso_id===p.id);return <article key={p.id} style={styles.card}><div style={styles.cardLayout}><button style={styles.cardButton} onClick={()=>{window.location.href=`/empleo/proceso/${p.id}`}}><div style={styles.cardTop}><span style={styles.badge}>{p.estado||"SIN ESTADO"}</span><span>{p.plazas!=null?`${p.plazas} ${p.plazas===1?"plaza":"plazas"}`:"Plazas no definidas"}</span></div><div style={styles.cardOrg}>{p.organismo_nombre}</div><h3 style={styles.cardTitle}>{idConv?`Convocatoria ${idConv}`:p.tipo_proceso||"Proceso selectivo"}</h3><p style={styles.cardSummary}>{resumen(p)}</p><p style={styles.muted}>{p.tipo_proceso||"Proceso selectivo"}{p.turno?` · ${p.turno}`:""}{p.grupo?` · ${p.grupo}`:""}</p><div style={styles.meta}>{textoInscripcion(p)}</div></button><div style={styles.cardActions}><button style={seguida?styles.follow:styles.primary} disabled={busy===p.id||procesando} onClick={()=>void toggleSeguimiento(p.id,!seguida)}>{busy===p.id?<span style={styles.busyLabel}><SpinnerInline/>Guardando…</span>:seguida?"Siguiendo":"Seguir"}</button>{p.url_oficial&&<a href={p.url_oficial} target="_blank" rel="noopener noreferrer" style={styles.officialLink}>Ver convocatoria oficial ↗</a>}{p.coaching_disponible?<span style={styles.coachingAvailable}>Preparación disponible en Tu Coach</span>:<span style={styles.coachingPending}>Preparación aún no disponible</span>}</div></div></article>})}</div>}</section>}
  </main>
 }
 
