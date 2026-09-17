@@ -397,7 +397,29 @@ def _obtener_corpus_convocatoria(
                 )
                 tiene_fuente_canonica = cur.fetchone() is not None
 
+                usar_fuente_canonica = False
                 if tiene_fuente_canonica:
+                    cur.execute(
+                        """
+                        SELECT 1
+                        FROM contenidos.temarios t
+                        JOIN contenidos.temario_temas tt
+                          ON tt.temario_id = t.id
+                        JOIN contenidos.temario_referencias tr
+                          ON tr.tema_id = tt.id
+                        JOIN contenidos.normas n
+                          ON n.id = tr.norma_id
+                        WHERE t.convocatoria_id = %s
+                          AND tr.estado = 'COMPLETADO'
+                          AND n.id_fuente_canonica IS NOT NULL
+                          AND TRIM(n.id_fuente_canonica) <> ''
+                        LIMIT 1
+                        """,
+                        (convocatoria_id,),
+                    )
+                    usar_fuente_canonica = cur.fetchone() is not None
+
+                if usar_fuente_canonica:
                     sql = sql_canonico.format(
                         schema="contenidos.",
                         param="%s",
