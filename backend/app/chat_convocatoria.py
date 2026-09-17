@@ -1390,6 +1390,236 @@ Reglas obligatorias:
     }
 
 
+def _es_consulta_inventario_corpus(pregunta: str) -> bool:
+    """
+    Detecta preguntas cuyo objeto es conocer qué contenido normativo está
+    realmente disponible en el corpus de la convocatoria.
+
+    No se utiliza IA ni recuperación semántica: estas consultas deben
+    responderse contra el inventario completo del corpus efectivo.
+    """
+    normalizada = _normalizar(pregunta)
+
+    if not normalizada:
+        return False
+
+    menciona_corpus = any(
+        expresion in normalizada
+        for expresion in (
+            "corpus",
+            "rag",
+            "fuentes disponibles",
+            "normativa disponible",
+            "normas disponibles",
+            "leyes disponibles",
+            "articulos disponibles",
+            "que normas tienes",
+            "que leyes tienes",
+            "que articulos tienes",
+            "que normativa tienes",
+            "con que normas puedes",
+            "con que leyes puedes",
+            "con que articulos puedes",
+            "que puedes consultar",
+            "que tienes disponible",
+        )
+    )
+
+    pide_inventario = any(
+        termino in normalizada
+        for termino in (
+            "disponible",
+            "disponibles",
+            "tienes",
+            "corpus",
+            "rag",
+            "puedes consultar",
+            "puedes contestar",
+            "puedes responder",
+        )
+    )
+
+    menciona_contenido_normativo = any(
+        termino in normalizada
+        for termino in (
+            "norma",
+            "normas",
+            "normativa",
+            "ley",
+            "leyes",
+            "articulo",
+            "articulos",
+            "corpus",
+            "rag",
+            "fuente",
+            "fuentes",
+        )
+    )
+
+    return (
+        menciona_corpus
+        or (
+            pide_inventario
+            and menciona_contenido_normativo
+        )
+    )
+
+
+def _clave_orden_articulo(articulo: str) -> tuple[Any, ...]:
+    """
+    Orden natural aproximado para referencias de artículos:
+    1, 2, 2.1, 10, 10 bis, etc.
+    """
+    normalizado = _normalizar(articulo)
+    partes = re.findall(r"\d+|[a-z]+", normalizado)
+
+    clave: list[tuple[int, Any]] = []
+
+    for parte in partes:
+        if parte.isdigit():
+            clave.append((0, int(parte)))
+        else:
+            clave.append((1, parte))
+
+    return tuple(clave)
+
+
+def _inventario_corpus_convocatoria(
+    convocatoria_id: int,
+) -> dict[str, list[str]]:
+    """
+    Devuelve norma -> artículos realmente disponibles en el corpus efectivo
+    de la convocatoria.
+
+    La fuente de verdad es _obtener_corpus_convocatoria(), exactamente la
+    misma que utiliza el RAG jurídico ordinario.
+    """
+    corpus = _obtener_corpus_convocatoria(convocatoria_id)
+
+    inventario: dict[str, set[str]] = {}
+
+    for fila in corpus:
+        norma = _nombre_norma_fila(fila)
+        articulo = _articulo_fila(fila)
+
+        if not norma or not articulo:
+            continue
+
+        inventario.setdefault(norma, set()).add(articulo)
+
+    return {
+        norma: sorted(
+            articulos,
+            key=_clave_orden_articulo,
+        )
+        for norma, articulos in sorted(
+            inventario.items(),
+            key=lambda elemento: _normalizar(elemento[0]),
+        )
+    }
+
+
+def _responder_inventario_corpus(
+    convocatoria_id: int,
+    pregunta: str,
+) -> dict[str, Any]:
+    """
+    Respuesta determinista para consultas sobre el contenido del corpus.
+
+    No pasa por selección semántica ni por los límites de fragmentos del RAG.
+    """
+    inventario = _inventario_corpus_convocatoria(convocatoria_id)
+
+    if not inventario:
+        return {
+            "respuesta": (
+                "No hay contenido normativo disponible en el corpus "
+                "de esta convocatoria."
+            ),
+            "fuentes": [],
+            "modelo": None,
+            "modo": "CONVOCATORIA",
+        }
+
+    normas_disponibles = list(inventario)
+    normas_solicitadas: list[str] = []
+
+    pregunta_normalizada = _normalizar(pregunta)
+
+    for norma in normas_disponibles:
+        norma_normalizada = _normalizar(norma)
+
+        if (
+            norma_normalizada
+            and norma_normalizada in pregunta_normalizada
+        ):
+            normas_solicitadas.append(norma)
+
+    if not normas_solicitadas:
+        for referencia in _extraer_normas(pregunta):
+            norma = _resolver_nombre_norma(
+                referencia,
+                normas_disponibles,
+            )
+            if norma and norma not in normas_solicitadas:
+                normas_solicitadas.append(norma)
+
+    inventario_mostrado = (
+        {
+            norma: inventario[norma]
+            for norma in normas_solicitadas
+        }
+        if normas_solicitadas
+        else inventario
+    )
+
+    lineas = [
+        (
+            "Este es el contenido normativo realmente disponible "
+            "en el corpus de la convocatoria:"
+        ),
+        "",
+    ]
+
+    total_articulos = 0
+
+    for norma, articulos in inventario_mostrado.items():
+        total_articulos += len(articulos)
+        lineas.append(f"**{norma}**")
+        lineas.append(
+            "Artículos disponibles: "
+            + ", ".join(articulos)
+        )
+        lineas.append("")
+
+    lineas.append(
+        f"Total: {len(inventario_mostrado)} normas y "
+        f"{total_articulos} artículos distintos mostrados."
+    )
+
+    if not normas_solicitadas:
+        lineas.append(
+            "El inventario procede del corpus efectivo completo de "
+            "esta convocatoria, no de una selección de fragmentos RAG."
+        )
+
+    fuentes = [
+        {
+            "tipo": "INVENTARIO_CORPUS",
+            "norma": norma,
+            "articulos": articulos,
+        }
+        for norma, articulos in inventario_mostrado.items()
+    ]
+
+    return {
+        "respuesta": "\n".join(lineas).strip(),
+        "fuentes": fuentes,
+        "modelo": None,
+        "modo": "CONVOCATORIA",
+    }
+
+
 def responder_chat(
     convocatoria_id: int,
     pregunta: str,
@@ -1415,6 +1645,12 @@ def responder_chat(
 
     if not pregunta_limpia:
         raise ValueError("La pregunta está vacía.")
+
+    if _es_consulta_inventario_corpus(pregunta_limpia):
+        return _responder_inventario_corpus(
+            convocatoria_id=convocatoria_id,
+            pregunta=pregunta_limpia,
+        )
 
     mensajes = mensajes_previos or []
 
