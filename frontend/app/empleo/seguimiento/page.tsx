@@ -20,8 +20,8 @@ function etiquetaPublicacion(tipo:string|null){const t=(tipo||"").toLowerCase();
 
 export default function SeguimientoPage(){
  const supabase=useMemo(()=>createClient(),[]);const [items,setItems]=useState<Suscripcion[]>([]);const [novedades,setNovedades]=useState<Novedad[]>([]);const [loading,setLoading]=useState(true);const [error,setError]=useState("");const [busy,setBusy]=useState<number|null>(null);const [nuevasIds,setNuevasIds]=useState<Set<string>>(new Set());
- async function cargar(){setLoading(true);setError("");try{const {data,error:e}=await supabase.auth.getSession();if(e)throw e;const t=data.session?.access_token;if(!t)throw new Error("Se requiere autenticación.");const [s,n,ev]=await Promise.all([api<Suscripcion[]>("suscripciones",t),api<Novedad[]>("seguimiento/cambios",t),api<EstadoNovedad>("seguimiento/estado",t)]);
-   setItems(s);setNovedades(n);
+ async function cargar(){setLoading(true);setError("");try{const {data,error:e}=await supabase.auth.getSession();if(e)throw e;const t=data.session?.access_token;if(!t)throw new Error("Se requiere autenticación.");const [s,n,ev,o]=await Promise.all([api<Suscripcion[]>("suscripciones",t),api<Novedad[]>("seguimiento/cambios",t),api<EstadoNovedad>("seguimiento/estado",t),api<Organismo[]>("organismos",t)]);
+   const mapa=new Map(o.map(x=>[x.id,x]));setItems(s.map(x=>{const org=mapa.get(x.organismo_id);return {...x,organismo_nombre:org?.provincia?`${x.organismo_nombre} · ${org.provincia}`:x.organismo_nombre}}));setNovedades(n);
    const utiles=n.filter(x=>esNovedadUtil(x,s));
    const visto=ev.ultima_novedad_vista_at?new Date(ev.ultima_novedad_vista_at).getTime():0;
    const idsNuevas=ev.ultima_novedad_vista_at?utiles.filter(x=>(x.detectado_at?new Date(x.detectado_at).getTime():0)>visto).map(x=>`${x.novedad_tipo}-${x.id}`):[];setNuevasIds(new Set(idsNuevas));
