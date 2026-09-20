@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-type Organismo = { id:number; nombre:string; tipo:string|null; provincia:string|null; municipio:string|null };\ntype Suscripcion = { id:number; proceso_id:number; organismo_id:number; organismo_nombre:string; denominacion:string; tipo_proceso:string|null; plazas:number|null; estado:string|null; anio_convocatoria:number|null; fecha_apertura:string|null; fecha_cierre:string|null; url_oficial:string|null; created_at:string|null; updated_at:string|null };
+type Organismo = { id:number; nombre:string; tipo:string|null; provincia:string|null; municipio:string|null };
+type Suscripcion = { id:number; proceso_id:number; organismo_id:number; organismo_nombre:string; denominacion:string; tipo_proceso:string|null; plazas:number|null; estado:string|null; anio_convocatoria:number|null; fecha_apertura:string|null; fecha_cierre:string|null; url_oficial:string|null; created_at:string|null; updated_at:string|null };
 type Novedad = { id:number; proceso_id:number; denominacion:string; organismo_nombre:string; novedad_tipo:"PUBLICACION"|"CAMBIO"; tipo:string|null; campo:string|null; resumen:string|null; detectado_at:string|null; significativo:boolean; url:string|null };
 type EstadoNovedad = { ultima_novedad_vista_at:string|null };
 
