@@ -15,7 +15,7 @@ type Proceso = {
   fecha_apertura: string | null; fecha_cierre: string | null; fecha_examen: string | null;
   lugar_examen: string | null; ultima_publicacion_at: string | null; datos_json: unknown;
   url_oficial: string | null; estado_inscripcion: string | null;
-  inscripcion: { codigo:string; fecha_apertura?:string|null; fecha_cierre?:string|null; fecha_referencia?:string|null; dias_habiles?:number|null; literal?:string|null } | null;
+  inscripcion: { codigo:string; fecha_apertura?:string|null; fecha_cierre?:string|null; fecha_referencia?:string|null; dias_habiles?:number|null; literal?:string|null; fecha_cierre_calculada?:boolean; fecha_cierre_sin_festivos_locales?:boolean; aviso_festivos_locales?:string|null } | null;
 };
 type Suscripcion = { id:number; proceso_id:number };
 type Provincia = "Valencia" | "Alicante" | "Castellón";
@@ -36,7 +36,7 @@ function capitalizarMunicipio(valor:string){return valor?valor.charAt(0).toLocal
 function CargandoOverlay(){return <><div role="status" aria-live="polite" aria-busy="true" style={styles.overlay}><div style={styles.overlayBox}><div style={styles.spinner}/><div>Cargando Empleo…</div></div></div><style>{`@keyframes empleo-spin { to { transform: rotate(360deg); } }`}</style></>}
 function SpinnerInline(){return <><span aria-hidden="true" style={styles.inlineSpinner}/><style>{`@keyframes empleo-spin { to { transform: rotate(360deg); } }`}</style></>}
 function plazasTotales(lista:Proceso[]){return lista.reduce((total,p)=>total+(p.plazas??0),0)}
-function textoInscripcion(p:Proceso){const i=p.inscripcion;if(!i)return"Plazo de inscripción no determinado";if(i.codigo==="ABIERTO"&&i.fecha_cierre)return`Inscripción abierta hasta ${fecha(i.fecha_cierre)}`;if(i.codigo==="CERRADO"&&i.fecha_cierre)return`Inscripción cerrada el ${fecha(i.fecha_cierre)}`;if(i.codigo==="PENDIENTE_APERTURA"&&i.fecha_apertura)return`Inscripción pendiente · abre el ${fecha(i.fecha_apertura)}`;if(i.codigo==="PENDIENTE_BOE")return"Inscripción pendiente de convocatoria en BOE";if(i.codigo==="PLAZO_LITERAL"){const inicio=i.fecha_referencia?fecha(i.fecha_referencia):null;if(i.dias_habiles&&inicio)return`Plazo: ${i.dias_habiles} días hábiles desde ${inicio}`;return i.literal||"Plazo de solicitud publicado"}return"Plazo de inscripción no determinado"}
+function textoInscripcion(p:Proceso){const i=p.inscripcion;if(!i)return"Plazo de inscripción no determinado";const aviso=i.fecha_cierre_sin_festivos_locales&&i.aviso_festivos_locales?` · ${i.aviso_festivos_locales}`:"";if(i.codigo==="ABIERTO"&&i.fecha_cierre)return`Inscripción abierta hasta ${fecha(i.fecha_cierre)}${aviso}`;if(i.codigo==="CERRADO"&&i.fecha_cierre)return`Inscripción cerrada el ${fecha(i.fecha_cierre)}${aviso}`;if(i.codigo==="PENDIENTE_APERTURA"&&i.fecha_apertura)return`Inscripción pendiente · abre el ${fecha(i.fecha_apertura)}${aviso}`;if(i.codigo==="PENDIENTE_BOE")return"Inscripción pendiente de convocatoria en BOE";if(i.codigo==="PLAZO_LITERAL"){const inicio=i.fecha_referencia?fecha(i.fecha_referencia):null;if(i.dias_habiles&&inicio)return`Plazo: ${i.dias_habiles} días hábiles desde ${inicio}`;return i.literal||"Plazo de solicitud publicado"}return"Plazo de inscripción no determinado"}
 function provinciaDe(o:Organismo){return PROVINCIAS.find(p=>(o.provincia||"").localeCompare(p,"es",{sensitivity:"base"})===0)||null}
 
 export default function EmpleoPage(){
