@@ -1,10 +1,10 @@
 """
 ==============================================================================
-OpoCoach-Web
-Archivo: app/conocimiento_opocoach.py
+TuCoach-Web
+Archivo: app/conocimiento_tucoach.py
 ==============================================================================
 
-Base de conocimiento interna sobre el funcionamiento de OpoCoach.
+Base de conocimiento interna sobre el funcionamiento de TuCoach.
 
 No accede a la base de datos y no modifica el corpus normativo.
 ==============================================================================
@@ -16,23 +16,24 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class EntradaConocimientoOpoCoach:
+class EntradaConocimientoTuCoach:
     clave: str
     titulo: str
     palabras_clave: tuple[str, ...]
     texto: str
 
 
-ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
-    EntradaConocimientoOpoCoach(
+ENTRADAS_CONOCIMIENTO_TUCOACH: tuple[EntradaConocimientoTuCoach, ...] = (
+    EntradaConocimientoTuCoach(
         clave="descripcion_general",
-        titulo="Qué es OpoCoach y para qué sirve",
+        titulo="Qué es TuCoach y para qué sirve",
         palabras_clave=(
+            # Alias legado temporal para consultas con la marca anterior.
             "opocoach", "aplicacion", "funcionamiento", "para que sirve",
             "objetivo", "entrenamiento", "oposicion", "oposiciones",
         ),
         texto=(
-            "OpoCoach es una aplicación de entrenamiento para oposiciones. "
+            "TuCoach es una aplicación de entrenamiento para oposiciones. "
             "Permite seleccionar una convocatoria, generar simulacros basados "
             "en su estructura y banco de preguntas, responderlos dentro de la "
             "aplicación o mediante un PDF, corregirlos y consultar resultados y "
@@ -41,7 +42,7 @@ ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
             "la convocatoria, la legislación vigente ni los materiales oficiales."
         ),
     ),
-    EntradaConocimientoOpoCoach(
+    EntradaConocimientoTuCoach(
         clave="convocatoria_activa",
         titulo="Convocatoria activa",
         palabras_clave=(
@@ -49,14 +50,14 @@ ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
             "cambiar convocatoria", "temario", "reglas puntuacion",
         ),
         texto=(
-            "La convocatoria activa determina el ámbito de trabajo de OpoCoach. "
+            "La convocatoria activa determina el ámbito de trabajo de TuCoach. "
             "Cada convocatoria dispone de su propio temario, banco de preguntas, "
             "corpus documental, estructura del examen y reglas de puntuación. "
             "Al cambiar de convocatoria, el chat debe iniciar una conversación "
             "independiente para evitar mezclar contenidos de convocatorias distintas."
         ),
     ),
-    EntradaConocimientoOpoCoach(
+    EntradaConocimientoTuCoach(
         clave="banco_preguntas",
         titulo="Banco de preguntas",
         palabras_clave=(
@@ -74,7 +75,7 @@ ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
             "como generadas por IA; esas opciones no se muestran al usuario."
         ),
     ),
-    EntradaConocimientoOpoCoach(
+    EntradaConocimientoTuCoach(
         clave="generacion_simulacro",
         titulo="Generación de simulacros",
         palabras_clave=(
@@ -83,14 +84,14 @@ ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
             "informatica", "preguntas generales",
         ),
         texto=(
-            "OpoCoach genera cada simulacro respetando la estructura definida "
+            "TuCoach genera cada simulacro respetando la estructura definida "
             "para la convocatoria activa y el orden de sus bloques. La selección "
             "se realiza entre las preguntas válidas del banco para esa convocatoria. "
             "El simulacro queda guardado para poder realizarlo, descargarlo, "
             "corregirlo o consultar posteriormente sus resultados."
         ),
     ),
-    EntradaConocimientoOpoCoach(
+    EntradaConocimientoTuCoach(
         clave="construccion_test",
         titulo="Construcción de tests",
         palabras_clave=(
@@ -104,7 +105,7 @@ ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
             "al usuario un selector de fuente ni los recuentos internos de disponibilidad."
         ),
     ),
-    EntradaConocimientoOpoCoach(
+    EntradaConocimientoTuCoach(
         clave="realizacion_prueba",
         titulo="Cómo responder una prueba",
         palabras_clave=(
@@ -117,7 +118,7 @@ ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
             "respuesta solo se considera contestada cuando se ha seleccionado una opción."
         ),
     ),
-    EntradaConocimientoOpoCoach(
+    EntradaConocimientoTuCoach(
         clave="nivel_seguridad",
         titulo="Nivel de seguridad de una respuesta",
         palabras_clave=(
@@ -131,7 +132,7 @@ ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
             "confianza del usuario y detectar errores cometidos con exceso de seguridad."
         ),
     ),
-    EntradaConocimientoOpoCoach(
+    EntradaConocimientoTuCoach(
         clave="correccion_resultados",
         titulo="Corrección y resultados",
         palabras_clave=(
@@ -147,7 +148,7 @@ ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
             "acumulados por tema, ley o norma y nivel de seguridad."
         ),
     ),
-    EntradaConocimientoOpoCoach(
+    EntradaConocimientoTuCoach(
         clave="modificar_respuestas",
         titulo="Modificar respuestas después de calificar",
         palabras_clave=(
@@ -160,7 +161,7 @@ ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
             "al volver a calificar se recalcula el resultado de esa misma prueba."
         ),
     ),
-    EntradaConocimientoOpoCoach(
+    EntradaConocimientoTuCoach(
         clave="cronometro",
         titulo="Cronómetro de corrección",
         palabras_clave=(
@@ -173,7 +174,7 @@ ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
             "tiempo ya empleado en esa misma prueba."
         ),
     ),
-    EntradaConocimientoOpoCoach(
+    EntradaConocimientoTuCoach(
         clave="pdf_preguntas",
         titulo="PDF de preguntas",
         palabras_clave=(
@@ -183,11 +184,11 @@ ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
         texto=(
             "El PDF de preguntas permite realizar la prueba fuera de la aplicación "
             "o imprimirla. Puede descargarse sin necesidad de haber calificado la "
-            "prueba. Las respuestas hechas en papel deben trasladarse a OpoCoach si "
+            "prueba. Las respuestas hechas en papel deben trasladarse a TuCoach si "
             "se desea obtener la corrección y las estadísticas en la aplicación."
         ),
     ),
-    EntradaConocimientoOpoCoach(
+    EntradaConocimientoTuCoach(
         clave="pdf_soluciones",
         titulo="PDF de soluciones",
         palabras_clave=(
@@ -201,7 +202,7 @@ ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
             "bajo petición y se reutilizan posteriormente."
         ),
     ),
-    EntradaConocimientoOpoCoach(
+    EntradaConocimientoTuCoach(
         clave="analisis_rendimiento",
         titulo="Análisis acumulado de rendimiento",
         palabras_clave=(
@@ -215,7 +216,7 @@ ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
             "de actuación."
         ),
     ),
-    EntradaConocimientoOpoCoach(
+    EntradaConocimientoTuCoach(
         clave="chat_convocatoria",
         titulo="Chat de la convocatoria",
         palabras_clave=(
@@ -224,22 +225,22 @@ ENTRADAS_CONOCIMIENTO_OPOCOACH: tuple[EntradaConocimientoOpoCoach, ...] = (
             "limpiar conversacion",
         ),
         texto=(
-            "En modo Convocatoria y OpoCoach, el chat responde únicamente con dos "
+            "En modo Convocatoria y TuCoach, el chat responde únicamente con dos "
             "fuentes internas: el corpus asignado a la convocatoria activa y esta "
-            "base de conocimiento sobre el funcionamiento de OpoCoach. Si las fuentes "
+            "base de conocimiento sobre el funcionamiento de TuCoach. Si las fuentes "
             "recuperadas no contienen información suficiente, debe decirlo. Existe "
             "también un modo separado de conocimiento general de GPT."
         ),
     ),
-    EntradaConocimientoOpoCoach(
+    EntradaConocimientoTuCoach(
         clave="limites_uso",
-        titulo="Alcance y limitaciones de OpoCoach",
+        titulo="Alcance y limitaciones de TuCoach",
         palabras_clave=(
             "limitaciones", "fiabilidad", "legislacion vigente", "oficial",
             "asesoramiento", "errores", "garantia", "sustituye", "actualizado",
         ),
         texto=(
-            "OpoCoach es una herramienta de entrenamiento. Sus simulacros, "
+            "TuCoach es una herramienta de entrenamiento. Sus simulacros, "
             "explicaciones y estadísticas ayudan a estudiar, pero no sustituyen "
             "las bases oficiales, la legislación vigente ni los materiales "
             "publicados por la administración convocante. El chat no presta "

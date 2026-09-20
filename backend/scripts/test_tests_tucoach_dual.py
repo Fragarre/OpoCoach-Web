@@ -4,7 +4,7 @@ import json
 import os
 
 from app.simulacros import _condicion_fuente, _normalizar_fuentes
-from app.tests_opocoach import (
+from app.tests_tucoach import (
     _cargar_datos_creacion_test,
     obtener_normas_test,
     obtener_puntos_temario_test,
@@ -76,7 +76,7 @@ def main() -> int:
 
     try:
         print("=" * 78)
-        print("PRUEBA TESTS OPOCOACH SQLITE ↔ POSTGRES")
+        print("PRUEBA TESTS TUCOACH SQLITE ↔ POSTGRES")
         print("=" * 78)
 
         for convocatoria_id in (1, 2):

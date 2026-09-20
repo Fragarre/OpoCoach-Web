@@ -33,9 +33,9 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
-from app.conocimiento_opocoach import (
-    ENTRADAS_CONOCIMIENTO_OPOCOACH,
-    EntradaConocimientoOpoCoach,
+from app.conocimiento_tucoach import (
+    ENTRADAS_CONOCIMIENTO_TUCOACH,
+    EntradaConocimientoTuCoach,
 )
 from app.database import (
     ORIGEN_CONTENIDOS_POSTGRES,
@@ -1155,7 +1155,7 @@ def buscar_fragmentos(
 
 
 def _puntuar_entrada_aplicacion(
-    entrada: EntradaConocimientoOpoCoach,
+    entrada: EntradaConocimientoTuCoach,
     pregunta: str,
     historial_usuario: list[str],
 ) -> float:
@@ -1215,7 +1215,7 @@ def buscar_fragmentos_aplicacion(
     historial = historial_usuario or []
     puntuados: list[FragmentoAplicacion] = []
 
-    for entrada in ENTRADAS_CONOCIMIENTO_OPOCOACH:
+    for entrada in ENTRADAS_CONOCIMIENTO_TUCOACH:
         puntuacion = _puntuar_entrada_aplicacion(
             entrada=entrada,
             pregunta=pregunta_limpia,
@@ -1839,7 +1839,7 @@ Reglas obligatorias:
 
     fuentes.extend(
         {
-            "tipo": "FUNCIONAMIENTO_OPOCOACH",
+            "tipo": "FUNCIONAMIENTO_TUCOACH",
             "clave": fragmento.clave,
             "titulo": fragmento.titulo,
         }

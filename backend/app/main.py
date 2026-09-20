@@ -51,7 +51,7 @@ from app.schemas import (
     PortalSessionResponse,
     EstadoSuscripcion,
 )
-from app.tests_opocoach import (
+from app.tests_tucoach import (
     obtener_puntos_temario_test,
     obtener_normas_test,
     crear_test,
