@@ -32,7 +32,8 @@ export async function GET(request: NextRequest) {
     return new Response(upstream.body, {
       status: 200,
       headers: {
-        "content-type": upstream.headers.get("content-type") ?? "application/pdf",
+        "content-type": "application/pdf",
+        "x-content-type-options": "nosniff",
         "content-disposition": 'inline; filename="convocatoria.pdf"',
         "cache-control": "no-store",
       },
