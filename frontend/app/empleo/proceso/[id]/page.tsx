@@ -28,7 +28,7 @@ function textoInscripcion(p:Proceso){
   if(i.codigo==="ABIERTO"&&i.fecha_cierre)return `Inscripción abierta hasta ${fecha(i.fecha_cierre)}`;
   if(i.codigo==="CERRADO"&&i.fecha_cierre)return `Inscripción cerrada el ${fecha(i.fecha_cierre)}`;
   if(i.codigo==="PENDIENTE_APERTURA"&&i.fecha_apertura)return `Inscripción pendiente · abre el ${fecha(i.fecha_apertura)}`;
-  if(i.codigo==="PENDIENTE_BOE")return "Inscripción pendiente de convocatoria en BOE";
+  if(i.codigo==="PENDIENTE_BOE")return "Inscripción pendiente de publicación en BOE";
   if(i.codigo==="PLAZO_LITERAL"){
     const inicio=i.fecha_referencia?fecha(i.fecha_referencia):null;
     if(i.dias_habiles&&inicio)return `Plazo: ${i.dias_habiles} días hábiles desde ${inicio}`;
