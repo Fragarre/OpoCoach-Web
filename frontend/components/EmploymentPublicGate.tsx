@@ -58,8 +58,8 @@ function EmploymentMiniLanding() {
         <div style={styles.eyebrow}>EMPLEO PÚBLICO · TU COACH</div>
         <h1 style={styles.title}>Descubre oportunidades. Sigue sus novedades. Prepárate para tu plaza.</h1>
         <p style={styles.lead}>
-          Tu Coach incorpora una funcionalidad para localizar oportunidades de empleo público,
-          consultar la información oficial de cada convocatoria y seguir sus novedades desde un mismo lugar.
+          Tu Coach reúne oportunidades de empleo público de la Generalitat Valenciana, las diputaciones
+          y los ayuntamientos de Valencia, Alicante y Castellón, con la información oficial y sus novedades en un mismo lugar.
         </p>
         <div style={styles.actions}>
           <Link href="/" style={styles.primary}>Iniciar sesión o registrarse →</Link>
@@ -73,7 +73,7 @@ function EmploymentMiniLanding() {
           <span style={styles.number}>01</span>
           <span style={styles.kicker}>DESCUBRE</span>
           <h2 style={styles.cardTitle}>Encuentra oportunidades que encajan contigo</h2>
-          <p style={styles.cardText}>Consulta convocatorias de los organismos disponibles y filtra las oportunidades que te interesan.</p>
+          <p style={styles.cardText}>Explora convocatorias de la Generalitat y de la administración local de Valencia, Alicante y Castellón.</p>
         </article>
         <article style={styles.card}>
           <span style={styles.number}>02</span>
