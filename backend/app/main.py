@@ -96,7 +96,7 @@ def _exigir_suscripcion_activa(user_id) -> dict:
         raise HTTPException(
             status_code=403,
             detail=(
-                "Esta función requiere una suscripción activa a OpoCoach."
+                "Esta función requiere una suscripción activa a TuCoach."
             ),
         )
     return estado
@@ -153,7 +153,7 @@ def _exigir_escritura_prueba(simulacro_id: int, user_id) -> tuple[dict, dict]:
 
 
 app = FastAPI(
-    title="OpoCoach API",
+    title="TuCoach API",
     version="0.9.0",
     description=(
         "Backend paralelo de migración: contenidos SQLite, persistencia "
@@ -325,11 +325,11 @@ def chat_api(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> dict:
     """
-    Chat autenticado de OpoCoach.
+    Chat autenticado de TuCoach.
 
     CONVOCATORIA:
         Restringe la respuesta al corpus de la convocatoria indicada y a la
-        base de conocimiento funcional de OpoCoach.
+        base de conocimiento funcional de TuCoach.
     GENERAL:
         Usa conocimiento general del modelo y no recupera el corpus.
     """

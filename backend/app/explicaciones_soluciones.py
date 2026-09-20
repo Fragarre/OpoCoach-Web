@@ -162,7 +162,7 @@ def _cargar_fuentes_juridicas(
     Carga en una sola consulta los textos jurídicos necesarios para el conjunto
     de preguntas.
 
-    En OpoCoach Streamlit la consulta individual por pregunta es barata porque
+    En TuCoach Streamlit la consulta individual por pregunta es barata porque
     los contenidos están en SQLite local. En Web, repetir esa misma estrategia
     contra PostgreSQL/Supabase introduce una latencia de red por pregunta.
     Esta función evita el patrón N+1 de consultas remotas y carga en bloque
@@ -259,7 +259,7 @@ def _preparar_preguntas(
             pregunta.get("tipo_clasificacion")
         ).upper()
 
-        # Paridad funcional con OpoCoach Streamlit:
+        # Paridad funcional con TuCoach Streamlit:
         # sólo JURIDICA exige fuente normativa. El resto es no jurídico.
         es_juridica = tipo_clasificacion == "JURIDICA"
         texto_fuente: str | None = None
@@ -271,7 +271,7 @@ def _preparar_preguntas(
             articulo_normalizado = _normalizar_articulo(
                 pregunta.get("articulo_normalizado")
             )
-            # Paridad con OpoCoach Streamlit validado:
+            # Paridad con TuCoach Streamlit validado:
             # primero referencia exacta y, si no existe, apartados/artículo padre.
             # Ej.: 34.1.b (normalizado 34.1) -> 34.1 -> 34.
             referencias_busqueda = [articulo_normalizado]
@@ -561,8 +561,8 @@ def generar_comentarios_soluciones(
     """
     Genera sólo comentarios pendientes y los persiste de forma idempotente.
 
-    Mantiene la seguridad multiusuario de OpoCoach-Web. Las llamadas IA se
-    ejecutan en paralelo, como en OpoCoach Streamlit, y las escrituras se hacen
+    Mantiene la seguridad multiusuario de TuCoach-Web. Las llamadas IA se
+    ejecutan en paralelo, como en TuCoach Streamlit, y las escrituras se hacen
     después de forma secuencial y por lote.
     """
     inicio_total = time.perf_counter()

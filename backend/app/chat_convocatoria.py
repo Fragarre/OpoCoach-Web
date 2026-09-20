@@ -1,6 +1,6 @@
 """
 ==============================================================================
-OpoCoach-Web
+TuCoach-Web
 Archivo: app/chat_convocatoria.py
 ==============================================================================
 
@@ -1256,7 +1256,7 @@ def _crear_contexto_aplicacion(
         bloques.append(
             "\n".join(
                 [
-                    f"[FUENTE {indice} — FUNCIONAMIENTO OPOCOACH]",
+                    f"[FUENTE {indice} — FUNCIONAMIENTO TUCOACH]",
                     f"Apartado: {fragmento.titulo}",
                     "Texto:",
                     fragmento.texto,
@@ -1367,11 +1367,11 @@ def responder_chat_general(
     historial = _crear_historial(mensajes)
 
     instrucciones = """
-Eres el asistente general de OpoCoach.
+Eres el asistente general de TuCoach.
 
 En este modo puedes responder utilizando tu conocimiento general. La respuesta
 no está limitada al corpus de la convocatoria ni a la base de conocimiento de
-OpoCoach.
+TuCoach.
 
 Reglas obligatorias:
 - Responde en español.
@@ -1720,7 +1720,7 @@ def responder_chat(
             respuesta_sin_fuente = (
                 "No he encontrado información suficiente en el corpus "
                 "asignado a esta convocatoria ni en la base de conocimiento "
-                "de OpoCoach para responder con seguridad."
+                "de TuCoach para responder con seguridad."
             )
 
         return {
@@ -1747,17 +1747,17 @@ def responder_chat(
     historial = _crear_historial(mensajes)
 
     instrucciones = """
-Eres el asistente especializado de OpoCoach y de la convocatoria activa.
+Eres el asistente especializado de TuCoach y de la convocatoria activa.
 
 Debes responder exclusivamente con la información contenida en las FUENTES
 proporcionadas. Las fuentes pueden ser de dos tipos:
 - CORPUS CONVOCATORIA: contenido normativo o de estudio de la convocatoria.
-- FUNCIONAMIENTO OPOCOACH: explicaciones sobre el uso de la aplicación.
+- FUNCIONAMIENTO TUCOACH: explicaciones sobre el uso de la aplicación.
 
 Puedes:
 - aclarar conceptos;
 - explicar artículos y normas con lenguaje más claro;
-- explicar cómo funciona OpoCoach y cómo interpretar sus elementos;
+- explicar cómo funciona TuCoach y cómo interpretar sus elementos;
 - poner ejemplos didácticos coherentes con las fuentes;
 - ampliar una explicación anterior;
 - relacionar varias fuentes recuperadas cuando resulte necesario.
@@ -1779,7 +1779,7 @@ Reglas obligatorias:
   "con lo disponible", "los fragmentos", "el corpus no contiene" o equivalentes,
   salvo que el propio usuario haya aportado expresamente documentos y pregunte
   por ellos.
-- Si la pregunta es ajena a la convocatoria y al funcionamiento de OpoCoach,
+- Si la pregunta es ajena a la convocatoria y al funcionamiento de TuCoach,
   recházala brevemente.
 - Distingue con claridad el contenido normativo de los ejemplos explicativos.
 - No des asesoramiento jurídico para casos reales.
@@ -1796,13 +1796,13 @@ Reglas obligatorias:
 - No abuses de listas: úsalas sólo cuando mejoren la claridad.
 - Cuando cites varios apartados de un mismo artículo, agrúpalos de forma compacta
   y natural, por ejemplo: "art. 94.1, 94.4 y 94.5".
-- Cuando el usuario pregunte cómo realizar una acción dentro de OpoCoach,
+- Cuando el usuario pregunte cómo realizar una acción dentro de TuCoach,
   responde primero con los pasos concretos indicados en las fuentes; no te
   limites a describir la función o el contenido del elemento.
 - Al final añade una línea breve titulada "Fuentes consultadas:". Para fuentes
   normativas, indica norma y artículo o apartados realmente utilizados, evitando
   repetir innecesariamente el nombre de la norma. Para fuentes de funcionamiento,
-  indica "Manual de OpoCoach" y el nombre del apartado realmente utilizado.
+  indica "Manual de TuCoach" y el nombre del apartado realmente utilizado.
 """.strip()
 
     prompt = (

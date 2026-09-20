@@ -55,8 +55,8 @@ def generar_pdf_material(
         rightMargin=derecho,
         topMargin=superior,
         bottomMargin=inferior,
-        title=f"OpoCoach - {norma_nombre}",
-        author="OpoCoach",
+        title=f"TuCoach - {norma_nombre}",
+        author="TuCoach",
         subject=tipo_material,
     )
 
@@ -75,7 +75,7 @@ def generar_pdf_material(
         canvas.drawString(
             izquierdo,
             9 * mm,
-            f"OpoCoach · {convocatoria_codigo}",
+            f"TuCoach · {convocatoria_codigo}",
         )
         canvas.drawRightString(
             ancho - derecho,
@@ -126,7 +126,7 @@ def generar_pdf_material(
     )
 
     contenido = [
-        Paragraph("OPOCOACH", titulo),
+        Paragraph("TUCOACH", titulo),
         Paragraph(_limpiar(convocatoria_codigo), subtitulo),
         Paragraph(_limpiar(convocatoria_puesto), subtitulo),
         Spacer(1, 3 * mm),

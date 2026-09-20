@@ -1,6 +1,6 @@
 """
 ==============================================================================
-OpoCoach
+TuCoach
 Archivo: analisis_rendimiento.py
 ==============================================================================
 
@@ -225,7 +225,7 @@ def construir_prompt_analisis_rendimiento(
     tasa_omisiones = _porcentaje(total_no_contestadas, total_preguntas)
 
     return f"""
-Eres el analista de rendimiento de OpoCoach. Tu función no es repetir las
+Eres el analista de rendimiento de TuCoach. Tu función no es repetir las
 estadísticas, sino convertirlas en decisiones útiles de estudio y estrategia
 de examen para un opositor.
 

@@ -55,7 +55,7 @@ def obtener_supabase_public_key() -> str:
 def validar_access_token(token: str) -> UsuarioAutenticado:
     """
     Valida el access token contra Supabase Auth y comprueba además que el
-    perfil local de OpoCoach existe y está activo.
+    perfil local de TuCoach existe y está activo.
     """
     try:
         respuesta = _supabase_http.get(
@@ -104,7 +104,7 @@ def validar_access_token(token: str) -> UsuarioAutenticado:
     if perfil is None:
         raise HTTPException(
             status_code=403,
-            detail="El usuario autenticado no tiene perfil OpoCoach.",
+            detail="El usuario autenticado no tiene perfil TuCoach.",
         )
 
     if not perfil["activo"]:

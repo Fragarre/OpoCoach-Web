@@ -47,7 +47,7 @@ def _texto(valor: object | None) -> str:
 
 def _nombre_archivo(simulacro: dict) -> str:
     tipo = str(simulacro.get("tipo_prueba") or "SIMULACRO").upper()
-    codigo = str(simulacro.get("convocatoria_codigo") or "OPOCOACH")
+    codigo = str(simulacro.get("convocatoria_codigo") or "TUCOACH")
     numero = int(simulacro.get("numero") or 0)
 
     prefijo = "TEST" if tipo == "TEST" else "SIMULACRO"
@@ -214,12 +214,12 @@ def generar_pdf_soluciones(
         rightMargin=1.8 * cm,
         topMargin=1.7 * cm,
         bottomMargin=1.7 * cm,
-        title=f"OpoCoach - Soluciones {tipo.title()} {numero}",
-        author="OpoCoach",
+        title=f"TuCoach - Soluciones {tipo.title()} {numero}",
+        author="TuCoach",
     )
 
     story = [
-        Paragraph("OPOCOACH", titulo),
+        Paragraph("TUCOACH", titulo),
         Paragraph(
             _texto(
                 f"{'TEST' if tipo == 'TEST' else 'SIMULACRO'} {numero}"
@@ -322,7 +322,7 @@ def generar_pdf_soluciones(
         canvas.drawString(
             1.8 * cm,
             0.9 * cm,
-            f"OpoCoach - Soluciones - {codigo or tipo}",
+            f"TuCoach - Soluciones - {codigo or tipo}",
         )
         canvas.drawRightString(
             A4[0] - 1.8 * cm,

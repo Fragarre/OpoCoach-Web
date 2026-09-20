@@ -44,7 +44,7 @@ def _texto(valor: object | None) -> str:
 
 def _nombre_archivo(simulacro: dict) -> str:
     tipo = str(simulacro.get("tipo_prueba") or "SIMULACRO").upper()
-    codigo = str(simulacro.get("convocatoria_codigo") or "OPOCOACH")
+    codigo = str(simulacro.get("convocatoria_codigo") or "TUCOACH")
     numero = int(simulacro.get("numero") or 0)
 
     prefijo = "TEST" if tipo == "TEST" else "SIMULACRO"
@@ -80,7 +80,7 @@ def generar_pdf_preguntas(
     estilos = getSampleStyleSheet()
 
     estilo_titulo = ParagraphStyle(
-        "TituloOpoCoach",
+        "TituloTuCoach",
         parent=estilos["Title"],
         fontName="Helvetica-Bold",
         fontSize=14,
@@ -89,7 +89,7 @@ def generar_pdf_preguntas(
         spaceAfter=4,
     )
     estilo_subtitulo = ParagraphStyle(
-        "SubtituloOpoCoach",
+        "SubtituloTuCoach",
         parent=estilos["Normal"],
         fontName="Helvetica",
         fontSize=10,
@@ -98,7 +98,7 @@ def generar_pdf_preguntas(
         spaceAfter=10,
     )
     estilo_pregunta = ParagraphStyle(
-        "PreguntaOpoCoach",
+        "PreguntaTuCoach",
         parent=estilos["BodyText"],
         fontName="Helvetica",
         fontSize=10,
@@ -106,7 +106,7 @@ def generar_pdf_preguntas(
         spaceAfter=4,
     )
     estilo_opcion = ParagraphStyle(
-        "OpcionOpoCoach",
+        "OpcionTuCoach",
         parent=estilos["BodyText"],
         fontName="Helvetica",
         fontSize=9.5,
@@ -115,7 +115,7 @@ def generar_pdf_preguntas(
         spaceAfter=2,
     )
     estilo_seguridad = ParagraphStyle(
-        "SeguridadOpoCoach",
+        "SeguridadTuCoach",
         parent=estilos["BodyText"],
         fontName="Helvetica",
         fontSize=8.5,
@@ -134,12 +134,12 @@ def generar_pdf_preguntas(
         rightMargin=1.8 * cm,
         topMargin=1.7 * cm,
         bottomMargin=1.7 * cm,
-        title=f"OpoCoach - {tipo.title()} {numero}",
-        author="OpoCoach",
+        title=f"TuCoach - {tipo.title()} {numero}",
+        author="TuCoach",
     )
 
     story = [
-        Paragraph("OPOCOACH", estilo_titulo),
+        Paragraph("TUCOACH", estilo_titulo),
         Paragraph(
             _texto(
                 f"{'TEST' if tipo == 'TEST' else 'SIMULACRO DE EXAMEN'}"
@@ -198,7 +198,7 @@ def generar_pdf_preguntas(
         canvas.drawString(
             1.8 * cm,
             0.9 * cm,
-            f"OpoCoach - {codigo or tipo}",
+            f"TuCoach - {codigo or tipo}",
         )
         canvas.drawRightString(
             A4[0] - 1.8 * cm,

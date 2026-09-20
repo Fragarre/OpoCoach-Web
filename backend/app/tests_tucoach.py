@@ -561,7 +561,7 @@ def crear_test(
                 )
                 perfil = cur.fetchone()
                 if perfil is None:
-                    raise ValueError("El usuario no tiene perfil OpoCoach.")
+                    raise ValueError("El usuario no tiene perfil TuCoach.")
                 if perfil["prueba_gratuita_consumida_at"] is not None:
                     raise ValueError(
                         "La prueba gratuita de esta cuenta ya ha sido utilizada."

@@ -639,7 +639,7 @@ def crear_simulacro(
         if not _tabla_modelo_examen_existe(con):
             raise RuntimeError(
                 "La base no contiene convocatoria_modelo_bloques. "
-                "Configure el modelo de examen desde OpoCoach-Mantenimiento."
+                "Configure el modelo de examen desde TuCoach-Mantenimiento."
             )
 
         bloques_por_parte = {
