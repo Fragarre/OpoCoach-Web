@@ -39,7 +39,7 @@ def main() -> None:
     print("Autenticación Supabase: OK")
     print(f"user_id: {usuario.id}")
     print(f"email: {usuario.email}")
-    print("Token validado y perfil OpoCoach activo: OK")
+    print("Token validado y perfil TuCoach activo: OK")
 
 
 if __name__ == "__main__":

@@ -273,7 +273,7 @@ def procesar_webhook(payload: bytes, signature: str) -> str:
 
         if user_id is None or not subscription_id:
             raise RuntimeError(
-                "Checkout completado sin user_id o subscription_id de OpoCoach."
+                "Checkout completado sin user_id o subscription_id de TuCoach."
             )
 
         suscripcion = _recuperar_suscripcion(subscription_id)
@@ -296,7 +296,7 @@ def procesar_webhook(payload: bytes, signature: str) -> str:
 
         if user_id is None:
             raise RuntimeError(
-                "No se puede asociar la suscripción Stripe con un usuario OpoCoach."
+                "No se puede asociar la suscripción Stripe con un usuario TuCoach."
             )
 
         _guardar_suscripcion(user_id, objeto)
@@ -306,7 +306,7 @@ def procesar_webhook(payload: bytes, signature: str) -> str:
         subscription_id = _subscription_id_desde_invoice(objeto)
         if not subscription_id:
             # Una factura que no pertenezca a una suscripción no afecta
-            # al acceso de OpoCoach.
+            # al acceso de TuCoach.
             return tipo
 
         user_id = _user_id_desde_subscription_id(subscription_id)
@@ -317,7 +317,7 @@ def procesar_webhook(payload: bytes, signature: str) -> str:
             user_id = _user_id_desde_metadata(suscripcion)
             if user_id is None:
                 raise RuntimeError(
-                    "No se puede asociar la factura Stripe con un usuario OpoCoach."
+                    "No se puede asociar la factura Stripe con un usuario TuCoach."
                 )
         else:
             suscripcion = _recuperar_suscripcion(subscription_id)

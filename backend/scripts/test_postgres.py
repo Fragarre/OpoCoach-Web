@@ -11,9 +11,9 @@ def main() -> None:
             database, version = cur.fetchone()
 
             # TEMP existe solo durante esta conexión y desaparece al cerrarla.
-            cur.execute("CREATE TEMP TABLE opocoach_test_conexion (valor integer NOT NULL)")
-            cur.execute("INSERT INTO opocoach_test_conexion(valor) VALUES (42)")
-            cur.execute("SELECT valor FROM opocoach_test_conexion")
+            cur.execute("CREATE TEMP TABLE tucoach_test_conexion (valor integer NOT NULL)")
+            cur.execute("INSERT INTO tucoach_test_conexion(valor) VALUES (42)")
+            cur.execute("SELECT valor FROM tucoach_test_conexion")
             valor = cur.fetchone()[0]
 
             if valor != 42:

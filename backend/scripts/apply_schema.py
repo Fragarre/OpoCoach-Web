@@ -14,7 +14,7 @@ def main() -> None:
             cur.execute(sql)
         con.commit()
 
-    print("Esquema PostgreSQL OpoCoach: OK")
+    print("Esquema PostgreSQL TuCoach: OK")
     print("Tablas creadas/verificadas:")
     print("- profiles")
     print("- subscriptions")

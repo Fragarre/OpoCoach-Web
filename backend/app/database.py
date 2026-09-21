@@ -34,7 +34,7 @@ def obtener_user_db_path() -> Path:
 
 def obtener_origen_contenidos() -> str:
     """
-    Devuelve el origen configurado para los contenidos de OpoCoach-Web.
+    Devuelve el origen configurado para los contenidos de TuCoach-Web.
 
     Por seguridad, el valor predeterminado sigue siendo SQLite.
     """
@@ -83,7 +83,7 @@ def conectar_contenidos_postgres() -> psycopg.Connection:
 
 def conectar_contenidos() -> sqlite3.Connection:
     """
-    Conexión de contenidos usada actualmente por OpoCoach-Web.
+    Conexión de contenidos usada actualmente por TuCoach-Web.
 
     IMPORTANTE:
     Durante la migración esta función continúa apuntando deliberadamente

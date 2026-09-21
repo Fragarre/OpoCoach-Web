@@ -41,7 +41,7 @@ def _obtener_pool() -> ConnectionPool:
                     timeout=10.0,
                     kwargs={"connect_timeout": 10},
                     open=True,
-                    name="opocoach-postgres",
+                    name="tucoach-postgres",
                 )
 
     return _pool
