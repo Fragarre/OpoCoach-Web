@@ -279,7 +279,7 @@ code {
   border: 3px solid rgba(52, 73, 94, 0.22);
   border-top-color: currentColor;
   border-radius: 50%;
-  animation: opocoach-spin 0.8s linear infinite;
+  animation: tucoach-spin 0.8s linear infinite;
 }
 
 .loading-spinner-large {
@@ -289,7 +289,7 @@ code {
   margin-top: 2px;
 }
 
-@keyframes opocoach-spin {
+@keyframes tucoach-spin {
   to {
     transform: rotate(360deg);
   }
@@ -556,7 +556,7 @@ button:disabled {
 }
 
 /* ============================================================
-   OpoCoach — shell visual público
+   Tu Coach — shell visual público
    ============================================================ */
 
 :root {
@@ -1335,7 +1335,7 @@ button:not(:disabled):active {
 }
 
 /* ============================================================
-   OpoCoach — landing pública y autenticación
+   Tu Coach — landing pública y autenticación
    ============================================================ */
 
 .public-site {
