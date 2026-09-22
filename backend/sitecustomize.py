@@ -60,6 +60,12 @@ if _activar_unificacion_empleo():
                 # exclusivamente el `app` de NetReto-Web-Empleo.
                 env["PYTHONPATH"] = str(_EMPLOYMENT_BACKEND_DIR)
 
+                # Empleo consulta exclusivamente la tabla administrativa central para
+                # autorizar /admin/gestion. La BD funcional de Empleo sigue separada.
+                tucoach_database_url = os.getenv("DATABASE_URL", "").strip()
+                if tucoach_database_url:
+                    env["TUCOACH_DATABASE_URL"] = tucoach_database_url
+
                 # El servicio unificado comparte proceso Render, pero NO base de datos.
                 # Empleo conserva su PostgreSQL actual mediante una variable específica.
                 employment_database_url = os.getenv("EMPLOYMENT_DATABASE_URL", "").strip()
