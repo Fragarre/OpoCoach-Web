@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.analisis_rendimiento import generar_analisis_rendimiento
 from app.admin_jobs import router as admin_jobs_router
+from app.agent_jobs import router as agent_jobs_router
 from app.chat_convocatoria import responder_chat
 from app.pdf_examen import generar_pdf_preguntas
 from app.pdf_soluciones import generar_pdf_soluciones
@@ -163,6 +164,7 @@ app = FastAPI(
 )
 
 app.include_router(admin_jobs_router)
+app.include_router(agent_jobs_router)
 
 
 @app.get("/health")
