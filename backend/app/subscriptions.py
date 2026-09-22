@@ -366,6 +366,20 @@ def obtener_estado_suscripcion(user_id: UUID) -> dict:
             )
             fila = cur.fetchone()
 
+            cur.execute(
+                """
+                SELECT acceso_total
+                FROM public.admin_users
+                WHERE user_id = %s
+                  AND activo = true
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            admin = cur.fetchone()
+
+    acceso_interno = bool(admin and admin["acceso_total"])
+
     consumida_at = (
         perfil["prueba_gratuita_consumida_at"]
         if perfil is not None
@@ -396,6 +410,11 @@ def obtener_estado_suscripcion(user_id: UUID) -> dict:
         if resultado.get(campo) is not None:
             resultado[campo] = resultado[campo].isoformat()
 
+    if acceso_interno:
+        resultado["suscrito"] = True
+        resultado["status"] = "ACCESO_INTERNO"
+
+    resultado["acceso_interno"] = acceso_interno
     resultado["prueba_gratuita_consumida_at"] = (
         consumida_at.isoformat() if consumida_at is not None else None
     )
@@ -427,4 +446,3 @@ def obtener_estado_suscripcion(user_id: UUID) -> dict:
     )
 
     return resultado
-
