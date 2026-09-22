@@ -16,7 +16,7 @@ from app.materiales import (
     obtener_resumen_preparado,
 )
 from app.pdf_materiales import generar_pdf_material
-from app.auth import UsuarioAutenticado, usuario_actual
+from app.auth import UsuarioAutenticado, exigir_admin, usuario_actual
 from app.billing import crear_checkout_suscripcion, crear_portal_cliente
 from app.subscriptions import (
     procesar_webhook,
@@ -202,6 +202,11 @@ def resumen_convocatoria(convocatoria_id: int) -> ResumenConvocatoria:
 @app.get("/api/v1/me", response_model=UsuarioActual)
 def me(usuario: UsuarioAutenticado = Depends(usuario_actual)) -> UsuarioActual:
     return UsuarioActual(id=str(usuario.id), email=usuario.email)
+
+
+@app.get("/api/v1/admin/me")
+def admin_me(usuario: UsuarioAutenticado = Depends(exigir_admin)) -> dict[str, str | bool]:
+    return {"id": str(usuario.id), "email": usuario.email, "admin": True}
 
 
 
