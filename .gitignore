@@ -15,3 +15,5 @@ playwright-report/
 test-results/
 backend/data/*.rollback
 node_modules
+
+backend/materiales/resumenes/backups_publicacion/
