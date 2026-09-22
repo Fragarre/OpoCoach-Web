@@ -1,7 +1,7 @@
-# OpoCoach-Web
+# Tu Coach Web
 
-Migración paralela de OpoCoach. No modifica la aplicación Streamlit ni
-OpoCoach-Mantenimiento.
+Migración paralela de Tu Coach. No modifica la aplicación Streamlit ni
+TuCoach-Mantenimiento.
 
 ## Arquitectura actual
 
@@ -31,7 +31,7 @@ sigue estando únicamente dentro de `DATABASE_URL`. No compartas ni subas
 
 ## Prueba de autenticación
 
-Desde `OpoCoach-Web/backend`:
+Desde `TuCoach-Web/backend`:
 
 ```powershell
 python -m scripts.test_auth
@@ -46,7 +46,7 @@ Resultado esperado:
 Autenticación Supabase: OK
 user_id: ...
 email: ...
-Token validado y perfil OpoCoach activo: OK
+Token validado y perfil Tu Coach activo: OK
 ```
 
 ## Prueba del ciclo completo con usuario autenticado
@@ -134,14 +134,14 @@ BACKEND_URL=http://127.0.0.1:8000
 Terminal 1:
 
 ```powershell
-cd OpoCoach-Web\backend
+cd TuCoach-Web\backend
 uvicorn app.main:app --reload
 ```
 
 Terminal 2:
 
 ```powershell
-cd OpoCoach-Web\frontend
+cd TuCoach-Web\frontend
 npm install
 npm run dev
 ```
@@ -212,7 +212,7 @@ Primera fase de la pasarela de pago:
 - `mode=subscription`;
 - Price ID configurado en `backend/.env`;
 - redirección al Checkout alojado de Stripe;
-- retorno a OpoCoach por éxito o cancelación.
+- retorno a Tu Coach por éxito o cancelación.
 
 Variables:
 
@@ -264,6 +264,6 @@ Modificar/importar/auditar contenidos en Mantenimiento
                     ↓
 6. ADMINISTRACIÓN
                     ↓
-2. Preparar publicación OpoCoach-Web
+2. Preparar publicación TuCoach-Web
                     ↓
 4. Actualizar contenidos Web en Supabase
