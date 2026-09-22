@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -36,17 +35,17 @@ def exigir_agente(
     with conectar_postgres() as con, con.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
-            SELECT id, nombre, token_hash
+            SELECT id, nombre
             FROM public.admin_agents
             WHERE activo = true
-              AND token_hash IS NOT NULL
-            """
+              AND token_hash = %s
+            LIMIT 1
+            """,
+            (token_hash,),
         )
-        agentes = cur.fetchall()
+        agente = cur.fetchone()
 
-    # compare_digest evita comparar directamente secretos derivados.
-    for agente in agentes:
-        if hmac.compare_digest(str(agente["token_hash"]), token_hash):
-            return AgenteAutenticado(id=agente["id"], nombre=agente["nombre"])
+    if agente is None:
+        raise HTTPException(status_code=401, detail="Credencial de agente no válida.")
 
-    raise HTTPException(status_code=401, detail="Credencial de agente no válida.")
+    return AgenteAutenticado(id=agente["id"], nombre=agente["nombre"])
