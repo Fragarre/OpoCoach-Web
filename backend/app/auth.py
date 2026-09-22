@@ -123,3 +123,31 @@ def usuario_actual(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return validar_access_token(credenciales.credentials)
+
+def exigir_admin(
+    usuario: UsuarioAutenticado = Depends(usuario_actual),
+) -> UsuarioAutenticado:
+    """
+    Exige un usuario TuCoach autenticado, activo y autorizado expresamente
+    para acceder a funciones administrativas.
+    """
+    with conectar_postgres() as con:
+        with con.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT activo
+                FROM public.admin_users
+                WHERE user_id = %s
+                LIMIT 1
+                """,
+                (usuario.id,),
+            )
+            admin = cur.fetchone()
+
+    if admin is None or not admin["activo"]:
+        raise HTTPException(
+            status_code=403,
+            detail="No autorizado para la administración de TuCoach.",
+        )
+
+    return usuario
