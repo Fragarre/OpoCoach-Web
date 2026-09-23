@@ -15,8 +15,8 @@ from app.postgres import conectar_postgres
 
 router = APIRouter(prefix="/api/v1/admin/jobs", tags=["admin-jobs"])
 
-# Primera operación permitida. La allowlist crecerá de forma explícita,
-# nunca aceptando nombres de comandos o shell enviados por el navegador.
+# Allowlist cerrada. Nunca se aceptan nombres de comandos o shell enviados
+# por el navegador.
 TIPOS_PERMITIDOS = {
     "VALIDACION_COMPLETA",
     "AUDITORIA_BD",
@@ -29,11 +29,17 @@ TIPOS_PERMITIDOS = {
     "AUDITORIA_FUNCIONAL_BANCO",
     "AUDITORIA_CONSISTENCIA_GLOBAL",
     "BUSCAR_NORMA_RESPUESTA_CORRECTA",
+    "MANTENIMIENTO_TEMARIO",
 }
 
 TIPOS_CON_CONVOCATORIA = {
     "AUDITORIA_FUNCIONAL_BANCO",
     "AUDITORIA_CONSISTENCIA_GLOBAL",
+    "MANTENIMIENTO_TEMARIO",
+}
+
+TIPOS_CONFIRMABLES = {
+    "MANTENIMIENTO_TEMARIO",
 }
 
 
@@ -221,13 +227,10 @@ def crear_job(
             detail=f"{tipo} no admite parámetros.",
         )
 
-    # Estas operaciones son de diagnóstico y no modifican la base de datos.
-    requiere_confirmacion = False
+    requiere_confirmacion = tipo in TIPOS_CONFIRMABLES
 
     try:
         with conectar_postgres() as con, con.cursor(row_factory=dict_row) as cur:
-            # Comprobación legible para el caso normal. El índice único parcial
-            # uq_admin_jobs_unico_activo es la garantía definitiva ante carreras.
             cur.execute(
                 """
                 SELECT id
