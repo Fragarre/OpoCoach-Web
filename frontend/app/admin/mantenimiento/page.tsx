@@ -79,6 +79,20 @@ const BLOQUES_OPERACIONES = [
     ],
   },
   {
+    titulo: "Generación de preguntas",
+    operaciones: [
+      {
+        tipo: "GENERAR_PREGUNTAS_JURIDICAS_IA",
+        titulo: "Generar preguntas jurídicas mediante IA",
+        descripcion: "Ejecuta el mismo generador jurídico del mantenimiento local. Las preguntas aceptadas pueden incorporarse a la base maestra y después se sincronizan los bancos y se ejecuta la validación completa.",
+        boton: "Generar preguntas",
+        usaIa: true,
+        modificaDatos: true,
+        requiereGeneracionJuridica: true,
+      },
+    ],
+  },
+  {
     titulo: "Temario y normativa",
     operaciones: [
       {
@@ -150,6 +164,10 @@ export default function MantenimientoPage() {
   const [modoBusquedaNorma, setModoBusquedaNorma] = useState<"pregunta" | "lote">("lote");
   const [preguntaId, setPreguntaId] = useState("1");
   const [limiteBusqueda, setLimiteBusqueda] = useState("20");
+  const [tipoJuridica, setTipoJuridica] = useState<"TEORICA" | "PRACTICA">("TEORICA");
+  const [ambitoJuridica, setAmbitoJuridica] = useState<"MODELO_EXAMEN" | "TEMA" | "TODOS_TEMAS">("MODELO_EXAMEN");
+  const [temaIdJuridica, setTemaIdJuridica] = useState("1");
+  const [cantidadJuridica, setCantidadJuridica] = useState("1");
 
   async function cargar() {
     try {
@@ -190,17 +208,31 @@ export default function MantenimientoPage() {
     }
   }
 
-  async function lanzar(tipo: string, requiereConvocatoria = false, requiereBusquedaNorma = false) {
+  async function lanzar(tipo: string, requiereConvocatoria = false, requiereBusquedaNorma = false, requiereGeneracionJuridica = false) {
     setLanzando(tipo);
     setError(null);
     try {
+      if (requiereGeneracionJuridica) {
+        const confirmado = window.confirm(
+          "Esta operación usa IA (tiene coste) y puede modificar la base maestra, sincronizar los bancos y ejecutar la validación completa. ¿Deseas continuar?"
+        );
+        if (!confirmado) return;
+      }
       await apiFetch<Job>("/api/v1/admin/jobs", {
         method: "POST",
         body: JSON.stringify({
           tipo,
-          parametros: requiereConvocatoria
-            ? { convocatoria_id: convocatoriaId }
-            : requiereBusquedaNorma
+          parametros: requiereGeneracionJuridica
+            ? {
+                convocatoria_id: convocatoriaId,
+                tipo: tipoJuridica,
+                cantidad: Number(cantidadJuridica),
+                ambito: ambitoJuridica,
+                ...(ambitoJuridica === "TEMA" ? { tema_id: Number(temaIdJuridica) } : {}),
+              }
+            : requiereConvocatoria
+              ? { convocatoria_id: convocatoriaId }
+              : requiereBusquedaNorma
               ? modoBusquedaNorma === "pregunta"
                 ? { pregunta_id: Number(preguntaId) }
                 : { limite: Number(limiteBusqueda) }
@@ -242,10 +274,32 @@ export default function MantenimientoPage() {
                 <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
                   {("requiereConfirmacion" in operacion && operacion.requiereConfirmacion)
                     ? "REVIEW · REQUIERE CONFIRMACIÓN · APPLY MODIFICA DATOS · CREA BACKUP"
-                    : `NO MODIFICA BD${("generaInforme" in operacion && operacion.generaInforme) ? " · GENERA INFORME LOCAL" : ""}${("usaIa" in operacion && operacion.usaIa) ? " · IA · COSTE" : ""}`}
+                    : ("modificaDatos" in operacion && operacion.modificaDatos)
+                      ? `MODIFICA DATOS · IA · COSTE · CONFIRMACIÓN PREVIA`
+                      : `NO MODIFICA BD${("generaInforme" in operacion && operacion.generaInforme) ? " · GENERA INFORME LOCAL" : ""}${("usaIa" in operacion && operacion.usaIa) ? " · IA · COSTE" : ""}`)}
                 </div>
                 <h2 style={{ margin: "0 0 6px", fontSize: 20 }}>{operacion.titulo}</h2>
                 <p style={{ margin: 0, color: "#555" }}>{operacion.descripcion}</p>
+                {"requiereGeneracionJuridica" in operacion && operacion.requiereGeneracionJuridica && (
+                  <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <select value={convocatoriaId ?? ""} onChange={(event) => setConvocatoriaId(Number(event.target.value))} disabled={Boolean(activo) || lanzando !== null} style={{ padding: "8px 10px", minWidth: 260 }}>
+                      {convocatorias.map((convocatoria) => <option key={convocatoria.id} value={convocatoria.id}>{convocatoria.codigo} · {convocatoria.puesto}</option>)}
+                    </select>
+                    <select value={tipoJuridica} onChange={(event) => {
+                      const valor = event.target.value as "TEORICA" | "PRACTICA";
+                      setTipoJuridica(valor);
+                      if (valor === "PRACTICA" && ambitoJuridica === "MODELO_EXAMEN") setAmbitoJuridica("TEMA");
+                    }} disabled={Boolean(activo) || lanzando !== null} style={{ padding: "8px 10px" }}>
+                      <option value="TEORICA">TEÓRICA</option><option value="PRACTICA">PRÁCTICA</option>
+                    </select>
+                    <select value={ambitoJuridica} onChange={(event) => setAmbitoJuridica(event.target.value as "MODELO_EXAMEN" | "TEMA" | "TODOS_TEMAS")} disabled={Boolean(activo) || lanzando !== null} style={{ padding: "8px 10px" }}>
+                      {tipoJuridica === "TEORICA" && <option value="MODELO_EXAMEN">Modelo de examen</option>}
+                      <option value="TEMA">Tema concreto</option><option value="TODOS_TEMAS">Todos los temas</option>
+                    </select>
+                    {ambitoJuridica === "TEMA" && <input type="number" min={1} value={temaIdJuridica} onChange={(event) => setTemaIdJuridica(event.target.value)} aria-label="ID de tema" style={{ padding: "8px 10px", width: 110 }} />}
+                    <input type="number" min={1} value={cantidadJuridica} onChange={(event) => setCantidadJuridica(event.target.value)} aria-label="Cantidad de preguntas" style={{ padding: "8px 10px", width: 110 }} />
+                  </div>
+                )}
                 {"requiereBusquedaNorma" in operacion && operacion.requiereBusquedaNorma && (
                   <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <select
@@ -288,6 +342,9 @@ export default function MantenimientoPage() {
                 disabled={
                   Boolean(activo) ||
                   lanzando !== null ||
+                  ("requiereGeneracionJuridica" in operacion && operacion.requiereGeneracionJuridica &&
+                    (convocatoriaId === null || !/^\d+$/.test(cantidadJuridica) || Number(cantidadJuridica) <= 0 ||
+                      (ambitoJuridica === "TEMA" && (!/^\d+$/.test(temaIdJuridica) || Number(temaIdJuridica) <= 0)))) ||
                   ("requiereBusquedaNorma" in operacion && operacion.requiereBusquedaNorma &&
                     (modoBusquedaNorma === "pregunta"
                       ? !/^\d+$/.test(preguntaId) || Number(preguntaId) <= 0
@@ -297,6 +354,7 @@ export default function MantenimientoPage() {
                   operacion.tipo,
                   "requiereConvocatoria" in operacion && operacion.requiereConvocatoria,
                   "requiereBusquedaNorma" in operacion && operacion.requiereBusquedaNorma,
+                  "requiereGeneracionJuridica" in operacion && operacion.requiereGeneracionJuridica,
                 )}
                 style={{ padding: "10px 16px", fontWeight: 700, cursor: activo || lanzando ? "not-allowed" : "pointer" }}
               >
