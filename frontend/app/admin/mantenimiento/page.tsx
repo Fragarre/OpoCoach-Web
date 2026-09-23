@@ -49,6 +49,27 @@ const OPERACIONES = [
     descripcion: "Contrasta los materiales preparados con las normas activas y la huella actual del corpus normativo.",
     boton: "Auditar materiales",
   },
+  {
+    tipo: "AUDITORIA_CORPUS_TEMARIO",
+    titulo: "Auditoría del temario/corpus",
+    descripcion: "Comprueba referencias jurídicas y artículos fuente del temario y genera un informe diagnóstico en el repositorio local.",
+    boton: "Auditar corpus",
+    generaInforme: true,
+  },
+  {
+    tipo: "AUDITORIA_ESQUEMA_OBSOLETO",
+    titulo: "Posibles objetos obsoletos",
+    descripcion: "Inventaría tablas, columnas y referencias de código para diagnosticar deuda técnica. No elimina objetos.",
+    boton: "Auditar esquema",
+    generaInforme: true,
+  },
+  {
+    tipo: "INVENTARIO_DENOMINACIONES_NORMAS",
+    titulo: "Denominaciones de normas",
+    descripcion: "Genera el inventario de denominaciones jurídicas presentes en lote_preguntas para diagnosticar la normalización.",
+    boton: "Generar inventario",
+    generaInforme: true,
+  },
 ] as const;
 
 export default function MantenimientoPage() {
@@ -114,7 +135,7 @@ export default function MantenimientoPage() {
           >
             <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
               <div style={{ flex: "1 1 620px" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>NO MODIFICA BD</div>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>\n                  NO MODIFICA BD{("generaInforme" in operacion && operacion.generaInforme) ? " · GENERA INFORME LOCAL" : ""}\n                </div>
                 <h2 style={{ margin: "0 0 6px", fontSize: 20 }}>{operacion.titulo}</h2>
                 <p style={{ margin: 0, color: "#555" }}>{operacion.descripcion}</p>
               </div>
