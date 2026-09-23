@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { apiFetch } from "@/lib/api";
 
+type Convocatoria = { id: number; codigo: string; puesto: string; numero: string; anio: number };
+
 type Job = {
   id: string;
   tipo: string;
@@ -70,6 +72,22 @@ const OPERACIONES = [
     boton: "Generar inventario",
     generaInforme: true,
   },
+  {
+    tipo: "AUDITORIA_FUNCIONAL_BANCO",
+    titulo: "Auditoría funcional de banco",
+    descripcion: "Audita el banco de una convocatoria concreta y genera el informe diagnóstico local.",
+    boton: "Auditar banco",
+    generaInforme: true,
+    requiereConvocatoria: true,
+  },
+  {
+    tipo: "AUDITORIA_CONSISTENCIA_GLOBAL",
+    titulo: "Consistencia global lote ↔ banco",
+    descripcion: "Contrasta lote, banco real, selección esperada, temario, duplicados e integridad para una convocatoria.",
+    boton: "Auditar consistencia",
+    generaInforme: true,
+    requiereConvocatoria: true,
+  },
 ] as const;
 
 export default function MantenimientoPage() {
@@ -77,6 +95,8 @@ export default function MantenimientoPage() {
   const [cargando, setCargando] = useState(true);
   const [lanzando, setLanzando] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [convocatorias, setConvocatorias] = useState<Convocatoria[]>([]);
+  const [convocatoriaId, setConvocatoriaId] = useState<number | null>(null);
 
   async function cargar() {
     try {
@@ -92,19 +112,28 @@ export default function MantenimientoPage() {
 
   useEffect(() => {
     void cargar();
+    void apiFetch<Convocatoria[]>("/api/v1/convocatorias")
+      .then((datos) => {
+        setConvocatorias(datos);
+        if (datos.length > 0) setConvocatoriaId(datos[0].id);
+      })
+      .catch((exc) => setError(exc instanceof Error ? exc.message : "No se pudieron cargar las convocatorias."));
     const timer = window.setInterval(() => void cargar(), 5000);
     return () => window.clearInterval(timer);
   }, []);
 
   const activo = useMemo(() => jobs.find((job) => ACTIVOS.has(job.estado)), [jobs]);
 
-  async function lanzar(tipo: string) {
+  async function lanzar(tipo: string, requiereConvocatoria = false) {
     setLanzando(tipo);
     setError(null);
     try {
       await apiFetch<Job>("/api/v1/admin/jobs", {
         method: "POST",
-        body: JSON.stringify({ tipo, parametros: {} }),
+        body: JSON.stringify({
+          tipo,
+          parametros: requiereConvocatoria ? { convocatoria_id: convocatoriaId } : {},
+        }),
       });
       await cargar();
     } catch (exc) {
@@ -138,11 +167,25 @@ export default function MantenimientoPage() {
                 <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>\n                  NO MODIFICA BD{("generaInforme" in operacion && operacion.generaInforme) ? " · GENERA INFORME LOCAL" : ""}\n                </div>
                 <h2 style={{ margin: "0 0 6px", fontSize: 20 }}>{operacion.titulo}</h2>
                 <p style={{ margin: 0, color: "#555" }}>{operacion.descripcion}</p>
+                {"requiereConvocatoria" in operacion && operacion.requiereConvocatoria && (
+                  <select
+                    value={convocatoriaId ?? ""}
+                    onChange={(event) => setConvocatoriaId(Number(event.target.value))}
+                    disabled={Boolean(activo) || lanzando !== null || (("requiereConvocatoria" in operacion && operacion.requiereConvocatoria) && convocatoriaId === null)}
+                    style={{ marginTop: 12, padding: "8px 10px", minWidth: 320 }}
+                  >
+                    {convocatorias.map((convocatoria) => (
+                      <option key={convocatoria.id} value={convocatoria.id}>
+                        {convocatoria.codigo} · {convocatoria.puesto}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <button
                 type="button"
                 disabled={Boolean(activo) || lanzando !== null}
-                onClick={() => void lanzar(operacion.tipo)}
+                onClick={() => void lanzar(operacion.tipo, "requiereConvocatoria" in operacion && operacion.requiereConvocatoria)}
                 style={{ padding: "10px 16px", fontWeight: 700, cursor: activo || lanzando ? "not-allowed" : "pointer" }}
               >
                 {lanzando === operacion.tipo
