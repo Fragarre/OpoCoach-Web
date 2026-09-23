@@ -20,82 +20,107 @@ type Job = {
 
 const ACTIVOS = new Set(["PENDIENTE", "RECOGIDO", "EJECUTANDO", "ESPERANDO_CONFIRMACION"]);
 
-const OPERACIONES = [
+const BLOQUES_OPERACIONES = [
   {
-    tipo: "VALIDACION_COMPLETA",
-    titulo: "Validación completa",
-    descripcion: "Comprueba integridad, bancos, duplicados, referencias jurídicas, modelos y auditorías sin guardar cambios en la base.",
-    boton: "Ejecutar validación",
+    titulo: "Validación general",
+    operaciones: [
+      {
+        tipo: "AUDITORIA_BD",
+        titulo: "Auditoría general de la BD",
+        descripcion: "Comprueba estructura, integridad, distribución, problemas objetivos y duplicados de la base maestra.",
+        boton: "Ejecutar auditoría",
+      },
+      {
+        tipo: "VALIDACION_COMPLETA",
+        titulo: "Validación completa",
+        descripcion: "Comprueba integridad, bancos, duplicados, referencias jurídicas, modelos y auditorías sin guardar cambios en la base.",
+        boton: "Ejecutar validación",
+      },
+    ],
   },
   {
-    tipo: "AUDITORIA_BD",
-    titulo: "Auditoría general de la BD",
-    descripcion: "Comprueba estructura, integridad, distribución, problemas objetivos y duplicados de la base maestra.",
-    boton: "Ejecutar auditoría",
+    titulo: "Bancos de preguntas",
+    operaciones: [
+      {
+        tipo: "AUDITORIA_CONSISTENCIA_GLOBAL",
+        titulo: "Auditoría de consistencia global lote ↔ banco",
+        descripcion: "Contrasta lote, banco real, selección esperada, temario, duplicados e integridad para una convocatoria.",
+        boton: "Auditar consistencia",
+        generaInforme: true,
+        requiereConvocatoria: true,
+      },
+      {
+        tipo: "AUDITORIA_ESTRUCTURA_BANCO",
+        titulo: "Auditoría de estructura del banco",
+        descripcion: "Inspecciona tablas, columnas, índices y claves foráneas relacionadas con los bancos.",
+        boton: "Auditar estructura",
+      },
+      {
+        tipo: "AUDITORIA_FUNCIONAL_BANCO",
+        titulo: "Auditoría funcional de banco",
+        descripcion: "Audita el banco de una convocatoria concreta y genera el informe diagnóstico local.",
+        boton: "Auditar banco",
+        generaInforme: true,
+        requiereConvocatoria: true,
+      },
+      {
+        tipo: "AUDITORIA_BANCOS_SELECCION",
+        titulo: "Auditoría de selección de bancos",
+        descripcion: "Reconstruye virtualmente la selección de los bancos activos y la compara con las preguntas almacenadas.",
+        boton: "Auditar bancos",
+      },
+    ],
   },
   {
-    tipo: "AUDITORIA_BANCOS_SELECCION",
-    titulo: "Auditoría de selección de bancos",
-    descripcion: "Reconstruye virtualmente la selección de los bancos activos y la compara con las preguntas almacenadas.",
-    boton: "Auditar bancos",
+    titulo: "Temario y normativa",
+    operaciones: [
+      {
+        tipo: "AUDITORIA_CORPUS_TEMARIO",
+        titulo: "Auditoría del temario/corpus",
+        descripcion: "Comprueba referencias jurídicas y artículos fuente del temario y genera un informe diagnóstico en el repositorio local.",
+        boton: "Auditar corpus",
+        generaInforme: true,
+      },
+      {
+        tipo: "BUSCAR_NORMA_RESPUESTA_CORRECTA",
+        titulo: "Buscar norma por respuesta correcta",
+        descripcion: "Usa IA para proponer norma y artículo a partir de la respuesta correcta de preguntas PENDIENTE. Sustituye el informe local anterior de esta misma auditoría.",
+        boton: "Buscar norma",
+        generaInforme: true,
+        usaIa: true,
+        requiereBusquedaNorma: true,
+      },
+      {
+        tipo: "INVENTARIO_DENOMINACIONES_NORMAS",
+        titulo: "Denominaciones de normas",
+        descripcion: "Genera el inventario de denominaciones jurídicas presentes en lote_preguntas para diagnosticar la normalización.",
+        boton: "Generar inventario",
+        generaInforme: true,
+      },
+    ],
   },
   {
-    tipo: "AUDITORIA_ESTRUCTURA_BANCO",
-    titulo: "Estructura del banco",
-    descripcion: "Inspecciona tablas, columnas, índices y claves foráneas relacionadas con los bancos.",
-    boton: "Auditar estructura",
-  },
-  {
-    tipo: "AUDITORIA_MATERIALES_ESTUDIO",
     titulo: "Materiales de estudio",
-    descripcion: "Contrasta los materiales preparados con las normas activas y la huella actual del corpus normativo.",
-    boton: "Auditar materiales",
+    operaciones: [
+      {
+        tipo: "AUDITORIA_MATERIALES_ESTUDIO",
+        titulo: "Materiales de estudio",
+        descripcion: "Contrasta los materiales preparados con las normas activas y la huella actual del corpus normativo.",
+        boton: "Auditar materiales",
+      },
+    ],
   },
   {
-    tipo: "AUDITORIA_CORPUS_TEMARIO",
-    titulo: "Auditoría del temario/corpus",
-    descripcion: "Comprueba referencias jurídicas y artículos fuente del temario y genera un informe diagnóstico en el repositorio local.",
-    boton: "Auditar corpus",
-    generaInforme: true,
-  },
-  {
-    tipo: "AUDITORIA_ESQUEMA_OBSOLETO",
-    titulo: "Posibles objetos obsoletos",
-    descripcion: "Inventaría tablas, columnas y referencias de código para diagnosticar deuda técnica. No elimina objetos.",
-    boton: "Auditar esquema",
-    generaInforme: true,
-  },
-  {
-    tipo: "INVENTARIO_DENOMINACIONES_NORMAS",
-    titulo: "Denominaciones de normas",
-    descripcion: "Genera el inventario de denominaciones jurídicas presentes en lote_preguntas para diagnosticar la normalización.",
-    boton: "Generar inventario",
-    generaInforme: true,
-  },
-  {
-    tipo: "AUDITORIA_FUNCIONAL_BANCO",
-    titulo: "Auditoría funcional de banco",
-    descripcion: "Audita el banco de una convocatoria concreta y genera el informe diagnóstico local.",
-    boton: "Auditar banco",
-    generaInforme: true,
-    requiereConvocatoria: true,
-  },
-  {
-    tipo: "AUDITORIA_CONSISTENCIA_GLOBAL",
-    titulo: "Consistencia global lote ↔ banco",
-    descripcion: "Contrasta lote, banco real, selección esperada, temario, duplicados e integridad para una convocatoria.",
-    boton: "Auditar consistencia",
-    generaInforme: true,
-    requiereConvocatoria: true,
-  },
-  {
-    tipo: "BUSCAR_NORMA_RESPUESTA_CORRECTA",
-    titulo: "Buscar norma por respuesta correcta",
-    descripcion: "Usa IA para proponer norma y artículo a partir de la respuesta correcta de preguntas PENDIENTE. Sustituye el informe local anterior de esta misma auditoría.",
-    boton: "Buscar norma",
-    generaInforme: true,
-    usaIa: true,
-    requiereBusquedaNorma: true,
+    titulo: "Diagnóstico técnico",
+    operaciones: [
+      {
+        tipo: "AUDITORIA_ESQUEMA_OBSOLETO",
+        titulo: "Posibles objetos obsoletos",
+        descripcion: "Inventaría tablas, columnas y referencias de código para diagnosticar deuda técnica. No elimina objetos.",
+        boton: "Auditar esquema",
+        generaInforme: true,
+      },
+    ],
   },
 ] as const;
 
@@ -175,7 +200,10 @@ export default function MantenimientoPage() {
       </header>
 
       <section style={{ display: "grid", gap: 14 }}>
-        {OPERACIONES.map((operacion) => (
+        {BLOQUES_OPERACIONES.map((bloque) => (
+          <section key={bloque.titulo} style={{ display: "grid", gap: 12 }}>
+            <h2 style={{ margin: "12px 0 0", fontSize: 22 }}>{bloque.titulo}</h2>
+            {bloque.operaciones.map((operacion) => (
           <article
             key={operacion.tipo}
             style={{ border: "1px solid #d9d9d9", borderRadius: 12, padding: 20, background: "#fff" }}
@@ -247,6 +275,8 @@ export default function MantenimientoPage() {
               </button>
             </div>
           </article>
+          ))}
+          </section>
         ))}
         <p style={{ margin: "0 0 0", fontSize: 13, color: "#666" }}>
           Todas las operaciones requieren que TuCoach Agent esté ejecutándose en el portátil.
@@ -278,6 +308,14 @@ export default function MantenimientoPage() {
                 {job.error_texto && <p style={{ marginBottom: 0 }}>Error: {job.error_texto}</p>}
                 {job.resultado?.returncode !== undefined && (
                   <p style={{ marginBottom: 0 }}>Código de salida: {job.resultado.returncode}</p>
+                )}
+                {job.resultado?.salida && (
+                  <details style={{ marginTop: 10 }}>
+                    <summary style={{ cursor: "pointer", fontWeight: 600 }}>Ver salida</summary>
+                    <pre style={{ margin: "10px 0 0", padding: 12, overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", background: "#f6f6f6", borderRadius: 8, fontSize: 12 }}>
+                      {job.resultado.salida}
+                    </pre>
+                  </details>
                 )}
               </article>
             ))}
