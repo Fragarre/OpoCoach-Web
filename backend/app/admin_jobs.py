@@ -28,6 +28,7 @@ TIPOS_PERMITIDOS = {
     "INVENTARIO_DENOMINACIONES_NORMAS",
     "AUDITORIA_FUNCIONAL_BANCO",
     "AUDITORIA_CONSISTENCIA_GLOBAL",
+    "BUSCAR_NORMA_RESPUESTA_CORRECTA",
 }
 
 TIPOS_CON_CONVOCATORIA = {
@@ -123,6 +124,20 @@ def crear_job(
             raise HTTPException(
                 status_code=400,
                 detail="convocatoria_id debe ser un entero positivo.",
+            )
+    elif tipo == "BUSCAR_NORMA_RESPUESTA_CORRECTA":
+        claves = set(payload.parametros)
+        if claves not in ({"pregunta_id"}, {"limite"}):
+            raise HTTPException(
+                status_code=400,
+                detail="BUSCAR_NORMA_RESPUESTA_CORRECTA requiere exactamente pregunta_id o limite.",
+            )
+        clave = next(iter(claves))
+        valor = payload.parametros.get(clave)
+        if isinstance(valor, bool) or not isinstance(valor, int) or valor <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{clave} debe ser un entero positivo.",
             )
     elif payload.parametros:
         raise HTTPException(
