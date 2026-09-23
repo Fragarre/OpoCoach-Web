@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from psycopg import errors
 from psycopg.rows import dict_row
 
 from app.auth import UsuarioAutenticado, exigir_admin
@@ -94,47 +96,58 @@ def crear_job(
     if tipo not in TIPOS_PERMITIDOS:
         raise HTTPException(status_code=400, detail="Tipo de trabajo no permitido.")
 
+    if tipo == "VALIDACION_COMPLETA" and payload.parametros:
+        raise HTTPException(
+            status_code=400,
+            detail="VALIDACION_COMPLETA no admite parámetros.",
+        )
+
     # VALIDACION_COMPLETA es estrictamente de solo lectura y no necesita
     # confirmación de escritura.
     requiere_confirmacion = False
 
-    with conectar_postgres() as con, con.cursor(row_factory=dict_row) as cur:
-        # Un único trabajo activo evita ejecuciones concurrentes sobre la
-        # base maestra local cuando el agente esté conectado.
-        cur.execute(
-            """
-            SELECT id
-            FROM public.admin_jobs
-            WHERE estado IN ('PENDIENTE','RECOGIDO','EJECUTANDO','ESPERANDO_CONFIRMACION')
-            LIMIT 1
-            FOR UPDATE
-            """
-        )
-        existente = cur.fetchone()
-        if existente is not None:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Ya existe un trabajo activo: {existente['id']}.",
+    try:
+        with conectar_postgres() as con, con.cursor(row_factory=dict_row) as cur:
+            # Comprobación legible para el caso normal. El índice único parcial
+            # uq_admin_jobs_unico_activo es la garantía definitiva ante carreras.
+            cur.execute(
+                """
+                SELECT id
+                FROM public.admin_jobs
+                WHERE estado IN ('PENDIENTE','RECOGIDO','EJECUTANDO','ESPERANDO_CONFIRMACION')
+                LIMIT 1
+                """
             )
+            existente = cur.fetchone()
+            if existente is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Ya existe un trabajo activo: {existente['id']}.",
+                )
 
-        cur.execute(
-            """
-            INSERT INTO public.admin_jobs
-                (tipo, parametros, solicitado_por, requiere_confirmacion)
-            VALUES (%s, %s::jsonb, %s, %s)
-            RETURNING *
-            """,
-            (tipo, __import__("json").dumps(payload.parametros), usuario.id, requiere_confirmacion),
-        )
-        job = cur.fetchone()
+            cur.execute(
+                """
+                INSERT INTO public.admin_jobs
+                    (tipo, parametros, solicitado_por, requiere_confirmacion)
+                VALUES (%s, %s::jsonb, %s, %s)
+                RETURNING *
+                """,
+                (tipo, json.dumps(payload.parametros), usuario.id, requiere_confirmacion),
+            )
+            job = cur.fetchone()
 
-        cur.execute(
-            """
-            INSERT INTO public.admin_job_events
-                (job_id, evento, actor_tipo, actor_usuario_id, detalle)
-            VALUES (%s, 'CREADO', 'USUARIO', %s, '{}'::jsonb)
-            """,
-            (job["id"], usuario.id),
-        )
+            cur.execute(
+                """
+                INSERT INTO public.admin_job_events
+                    (job_id, evento, actor_tipo, actor_usuario_id, detalle)
+                VALUES (%s, 'CREADO', 'USUARIO', %s, '{}'::jsonb)
+                """,
+                (job["id"], usuario.id),
+            )
+    except errors.UniqueViolation as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Ya existe un trabajo administrativo activo.",
+        ) from exc
 
     return _serializar(job)
