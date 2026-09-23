@@ -217,7 +217,7 @@ export default function MantenimientoPage() {
         <h1 style={{ margin: "8px 0 10px" }}>Mantenimiento</h1>
         <p style={{ margin: 0, maxWidth: 760, color: "#555", lineHeight: 1.55 }}>
           Ejecución controlada de operaciones sobre el repositorio local de mantenimiento.
-          Las auditorías no modifican la base de datos. Las operaciones de mantenimiento se ejecutan por fases y requieren confirmación explícita antes de cualquier paso preparatorio de escritura.
+          Las auditorías no modifican la base de datos. Las operaciones de mantenimiento se ejecutan por fases y requieren confirmación explícita antes de aplicar cambios.
         </p>
       </header>
 
@@ -234,7 +234,7 @@ export default function MantenimientoPage() {
               <div style={{ flex: "1 1 620px" }}>
                 <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
                   {("requiereConfirmacion" in operacion && operacion.requiereConfirmacion)
-                    ? "REVIEW · REQUIERE CONFIRMACIÓN · APPLY PREPARADO SOLO CREA BACKUP"
+                    ? "REVIEW · REQUIERE CONFIRMACIÓN · APPLY MODIFICA DATOS · CREA BACKUP"
                     : `NO MODIFICA BD${("generaInforme" in operacion && operacion.generaInforme) ? " · GENERA INFORME LOCAL" : ""}${("usaIa" in operacion && operacion.usaIa) ? " · IA · COSTE" : ""}`}
                 </div>
                 <h2 style={{ margin: "0 0 6px", fontSize: 20 }}>{operacion.titulo}</h2>
@@ -344,7 +344,7 @@ export default function MantenimientoPage() {
                       {accionJob === `${job.id}:cancelar` ? "Cancelando…" : "Cancelar"}
                     </button>
                     <span style={{ alignSelf: "center", fontSize: 12, color: "#666" }}>
-                      Confirmar permite únicamente la siguiente fase definida por el Agent.
+                      Confirmar autoriza la siguiente fase definida por el Agent; en operaciones APPLY puede modificar datos.
                     </span>
                   </div>
                 )}
