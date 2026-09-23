@@ -72,7 +72,7 @@ def reclamar_job(
             UPDATE public.admin_jobs
             SET estado='RECOGIDO', agente_id=%s, recogido_at=%s, updated_at=%s
             WHERE id=%s AND estado='PENDIENTE'
-            RETURNING id, tipo, parametros, estado, requiere_confirmacion, creado_at
+            RETURNING id, tipo, parametros, estado, requiere_confirmacion, confirmado_at, resultado, creado_at
             """,
             (agente.id, ahora, ahora, pendiente["id"]),
         )
@@ -152,8 +152,8 @@ def actualizar_estado_job(
             """
             UPDATE public.admin_jobs
             SET estado=%s,
-                resultado=%s::jsonb,
-                error_texto=%s,
+                resultado=COALESCE(%s::jsonb, resultado),
+                error_texto=COALESCE(%s, error_texto),
                 iniciado_at=COALESCE(iniciado_at, %s),
                 finalizado_at=COALESCE(finalizado_at, %s),
                 updated_at=%s
