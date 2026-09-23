@@ -104,6 +104,82 @@ def obtener_job(
     return {**_serializar(job), "eventos": eventos}
 
 
+@router.post("/{job_id}/confirmar")
+def confirmar_job(
+    job_id: UUID,
+    usuario: UsuarioAutenticado = Depends(exigir_admin),
+) -> dict[str, Any]:
+    with conectar_postgres() as con, con.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT * FROM public.admin_jobs
+            WHERE id=%s
+            FOR UPDATE
+            """,
+            (job_id,),
+        )
+        job = cur.fetchone()
+        if job is None:
+            raise HTTPException(status_code=404, detail="Trabajo no encontrado.")
+        if not job["requiere_confirmacion"]:
+            raise HTTPException(status_code=409, detail="Este trabajo no requiere confirmación.")
+        if job["estado"] != "ESPERANDO_CONFIRMACION":
+            raise HTTPException(status_code=409, detail=f"El trabajo no espera confirmación: {job['estado']}.")
+
+        cur.execute(
+            """
+            UPDATE public.admin_jobs
+            SET estado='PENDIENTE', confirmado_por=%s, confirmado_at=now(), updated_at=now()
+            WHERE id=%s AND estado='ESPERANDO_CONFIRMACION'
+            RETURNING *
+            """,
+            (usuario.id, job_id),
+        )
+        actualizado = cur.fetchone()
+        cur.execute(
+            """
+            INSERT INTO public.admin_job_events
+                (job_id, evento, actor_tipo, actor_usuario_id, detalle)
+            VALUES (%s, 'CONFIRMADO', 'USUARIO', %s, '{}'::jsonb)
+            """,
+            (job_id, usuario.id),
+        )
+    return _serializar(actualizado)
+
+
+@router.post("/{job_id}/cancelar")
+def cancelar_job(
+    job_id: UUID,
+    usuario: UsuarioAutenticado = Depends(exigir_admin),
+) -> dict[str, Any]:
+    with conectar_postgres() as con, con.cursor(row_factory=dict_row) as cur:
+        cur.execute("SELECT * FROM public.admin_jobs WHERE id=%s FOR UPDATE", (job_id,))
+        job = cur.fetchone()
+        if job is None:
+            raise HTTPException(status_code=404, detail="Trabajo no encontrado.")
+        if job["estado"] != "ESPERANDO_CONFIRMACION":
+            raise HTTPException(status_code=409, detail=f"Solo puede cancelarse un trabajo esperando confirmación: {job['estado']}.")
+        cur.execute(
+            """
+            UPDATE public.admin_jobs
+            SET estado='INTERRUMPIDO', finalizado_at=now(), updated_at=now()
+            WHERE id=%s AND estado='ESPERANDO_CONFIRMACION'
+            RETURNING *
+            """,
+            (job_id,),
+        )
+        actualizado = cur.fetchone()
+        cur.execute(
+            """
+            INSERT INTO public.admin_job_events
+                (job_id, evento, actor_tipo, actor_usuario_id, detalle)
+            VALUES (%s, 'CANCELADO', 'USUARIO', %s, '{}'::jsonb)
+            """,
+            (job_id, usuario.id),
+        )
+    return _serializar(actualizado)
+
+
 @router.post("", status_code=201)
 def crear_job(
     payload: CrearJobRequest,
