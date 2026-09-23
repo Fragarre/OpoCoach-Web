@@ -17,7 +17,13 @@ router = APIRouter(prefix="/api/v1/admin/jobs", tags=["admin-jobs"])
 
 # Primera operación permitida. La allowlist crecerá de forma explícita,
 # nunca aceptando nombres de comandos o shell enviados por el navegador.
-TIPOS_PERMITIDOS = {"VALIDACION_COMPLETA"}
+TIPOS_PERMITIDOS = {
+    "VALIDACION_COMPLETA",
+    "AUDITORIA_BD",
+    "AUDITORIA_BANCOS_SELECCION",
+    "AUDITORIA_ESTRUCTURA_BANCO",
+    "AUDITORIA_MATERIALES_ESTUDIO",
+}
 
 
 class CrearJobRequest(BaseModel):
@@ -96,14 +102,13 @@ def crear_job(
     if tipo not in TIPOS_PERMITIDOS:
         raise HTTPException(status_code=400, detail="Tipo de trabajo no permitido.")
 
-    if tipo == "VALIDACION_COMPLETA" and payload.parametros:
+    if payload.parametros:
         raise HTTPException(
             status_code=400,
-            detail="VALIDACION_COMPLETA no admite parámetros.",
+            detail=f"{tipo} no admite parámetros.",
         )
 
-    # VALIDACION_COMPLETA es estrictamente de solo lectura y no necesita
-    # confirmación de escritura.
+    # Estas operaciones son de diagnóstico y no modifican la base de datos.
     requiere_confirmacion = False
 
     try:
