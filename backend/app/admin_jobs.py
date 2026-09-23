@@ -31,6 +31,7 @@ TIPOS_PERMITIDOS = {
     "BUSCAR_NORMA_RESPUESTA_CORRECTA",
     "MANTENIMIENTO_TEMARIO",
     "SINCRONIZAR_BANCOS",
+    "GENERAR_PREGUNTAS_JURIDICAS_IA",
 }
 
 TIPOS_CON_CONVOCATORIA = {
@@ -209,6 +210,30 @@ def crear_job(
                 status_code=400,
                 detail="convocatoria_id debe ser un entero positivo.",
             )
+    elif tipo == "GENERAR_PREGUNTAS_JURIDICAS_IA":
+        claves_permitidas = {"convocatoria_id", "tipo", "cantidad", "ambito", "tema_id"}
+        if not set(payload.parametros).issubset(claves_permitidas):
+            raise HTTPException(status_code=400, detail="Parámetros no permitidos para generación jurídica IA.")
+        convocatoria_id = payload.parametros.get("convocatoria_id")
+        tipo_pregunta = payload.parametros.get("tipo")
+        cantidad = payload.parametros.get("cantidad")
+        ambito = payload.parametros.get("ambito")
+        tema_id = payload.parametros.get("tema_id")
+        if isinstance(convocatoria_id, bool) or not isinstance(convocatoria_id, int) or convocatoria_id <= 0:
+            raise HTTPException(status_code=400, detail="convocatoria_id debe ser un entero positivo.")
+        if tipo_pregunta not in {"TEORICA", "PRACTICA"}:
+            raise HTTPException(status_code=400, detail="tipo debe ser TEORICA o PRACTICA.")
+        if isinstance(cantidad, bool) or not isinstance(cantidad, int) or cantidad <= 0:
+            raise HTTPException(status_code=400, detail="cantidad debe ser un entero positivo.")
+        if ambito not in {"MODELO_EXAMEN", "TEMA", "TODOS_TEMAS"}:
+            raise HTTPException(status_code=400, detail="Ámbito de generación no permitido.")
+        if tipo_pregunta == "PRACTICA" and ambito == "MODELO_EXAMEN":
+            raise HTTPException(status_code=400, detail="PRACTICA no admite reparto por modelo de examen.")
+        if ambito == "TEMA":
+            if isinstance(tema_id, bool) or not isinstance(tema_id, int) or tema_id <= 0:
+                raise HTTPException(status_code=400, detail="El ámbito TEMA requiere tema_id entero positivo.")
+        elif tema_id is not None:
+            raise HTTPException(status_code=400, detail="tema_id solo se admite con ámbito TEMA.")
     elif tipo == "BUSCAR_NORMA_RESPUESTA_CORRECTA":
         claves = set(payload.parametros)
         if claves not in ({"pregunta_id"}, {"limite"}):
