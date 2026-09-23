@@ -276,7 +276,7 @@ export default function MantenimientoPage() {
                     ? "REVIEW · REQUIERE CONFIRMACIÓN · APPLY MODIFICA DATOS · CREA BACKUP"
                     : ("modificaDatos" in operacion && operacion.modificaDatos)
                       ? `MODIFICA DATOS · IA · COSTE · CONFIRMACIÓN PREVIA`
-                      : `NO MODIFICA BD${("generaInforme" in operacion && operacion.generaInforme) ? " · GENERA INFORME LOCAL" : ""}${("usaIa" in operacion && operacion.usaIa) ? " · IA · COSTE" : ""}`)}
+                      : `NO MODIFICA BD${("generaInforme" in operacion && operacion.generaInforme) ? " · GENERA INFORME LOCAL" : ""}${("usaIa" in operacion && operacion.usaIa) ? " · IA · COSTE" : ""}`}
                 </div>
                 <h2 style={{ margin: "0 0 6px", fontSize: 20 }}>{operacion.titulo}</h2>
                 <p style={{ margin: 0, color: "#555" }}>{operacion.descripcion}</p>
