@@ -26,7 +26,7 @@ class EstadoJobRequest(BaseModel):
     error_texto: str | None = Field(default=None, max_length=10000)
 
 
-ESTADOS_AGENTE = {"EJECUTANDO", "COMPLETADO", "ERROR", "INTERRUMPIDO"}
+ESTADOS_AGENTE = {"EJECUTANDO", "ESPERANDO_CONFIRMACION", "COMPLETADO", "ERROR", "INTERRUMPIDO"}
 
 
 @router.post("/heartbeat")
@@ -103,7 +103,7 @@ def actualizar_estado_job(
     with conectar_postgres() as con, con.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
-            SELECT id, estado, agente_id
+            SELECT id, estado, agente_id, requiere_confirmacion, confirmado_at
             FROM public.admin_jobs
             WHERE id=%s
             FOR UPDATE
@@ -131,8 +131,15 @@ def actualizar_estado_job(
 
         permitidas = {
             "RECOGIDO": {"EJECUTANDO", "ERROR", "INTERRUMPIDO"},
-            "EJECUTANDO": {"COMPLETADO", "ERROR", "INTERRUMPIDO"},
+            "EJECUTANDO": {"ESPERANDO_CONFIRMACION", "COMPLETADO", "ERROR", "INTERRUMPIDO"},
         }
+        if nuevo == "ESPERANDO_CONFIRMACION":
+            if not job["requiere_confirmacion"]:
+                raise HTTPException(status_code=409, detail="El trabajo no requiere confirmación.")
+            if job["confirmado_at"] is not None:
+                raise HTTPException(status_code=409, detail="El trabajo ya fue confirmado; no puede volver a revisión.")
+            if payload.resultado is None:
+                raise HTTPException(status_code=400, detail="La revisión debe incluir un resultado antes de solicitar confirmación.")
         if nuevo not in permitidas.get(anterior, set()):
             raise HTTPException(
                 status_code=409,
