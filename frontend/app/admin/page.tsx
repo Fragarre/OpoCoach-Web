@@ -12,8 +12,8 @@ const modulos = [
   {
     titulo: "Mantenimiento",
     descripcion: "Validaciones, bancos de preguntas, temarios y publicación de contenidos.",
-    href: null,
-    estado: "PRÓXIMO",
+    href: "/admin/mantenimiento",
+    estado: "DISPONIBLE",
   },
   {
     titulo: "Trabajos y agente local",
