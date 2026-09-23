@@ -135,7 +135,8 @@ const BLOQUES_OPERACIONES = [
 export default function MantenimientoPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [lanzando, setLanzando] = useState<string | null>(null);\n  const [accionJob, setAccionJob] = useState<string | null>(null);
+  const [lanzando, setLanzando] = useState<string | null>(null);
+  const [accionJob, setAccionJob] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [convocatorias, setConvocatorias] = useState<Convocatoria[]>([]);
   const [convocatoriaId, setConvocatoriaId] = useState<number | null>(null);
