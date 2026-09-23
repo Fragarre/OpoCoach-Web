@@ -135,7 +135,7 @@ const BLOQUES_OPERACIONES = [
 export default function MantenimientoPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [lanzando, setLanzando] = useState<string | null>(null);
+  const [lanzando, setLanzando] = useState<string | null>(null);\n  const [accionJob, setAccionJob] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [convocatorias, setConvocatorias] = useState<Convocatoria[]>([]);
   const [convocatoriaId, setConvocatoriaId] = useState<number | null>(null);
@@ -164,7 +164,20 @@ export default function MantenimientoPage() {
       })
       .catch((exc) => setError(exc instanceof Error ? exc.message : "No se pudieron cargar las convocatorias."));
     const timer = window.setInterval(() => void cargar(), 5000);
-    return () => window.clearInterval(timer);
+    async function resolverConfirmacion(jobId: string, accion: "confirmar" | "cancelar") {
+    setAccionJob(`${jobId}:${accion}`);
+    setError(null);
+    try {
+      await apiFetch<Job>(`/api/v1/admin/jobs/${jobId}/${accion}`, { method: "POST" });
+      await cargar();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : `No se pudo ${accion} el trabajo.`);
+    } finally {
+      setAccionJob(null);
+    }
+  }
+
+  return () => window.clearInterval(timer);
   }, []);
 
   const activo = useMemo(() => jobs.find((job) => ACTIVOS.has(job.estado)), [jobs]);
@@ -320,6 +333,19 @@ export default function MantenimientoPage() {
                 {job.error_texto && <p style={{ marginBottom: 0 }}>Error: {job.error_texto}</p>}
                 {job.resultado?.returncode !== undefined && (
                   <p style={{ marginBottom: 0 }}>Código de salida: {job.resultado.returncode}</p>
+                )}
+                {job.estado === "ESPERANDO_CONFIRMACION" && (
+                  <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button type="button" disabled={accionJob !== null} onClick={() => void resolverConfirmacion(job.id, "confirmar")} style={{ padding: "9px 14px", fontWeight: 700 }}>
+                      {accionJob === `${job.id}:confirmar` ? "Confirmando…" : "Confirmar continuación"}
+                    </button>
+                    <button type="button" disabled={accionJob !== null} onClick={() => void resolverConfirmacion(job.id, "cancelar")} style={{ padding: "9px 14px" }}>
+                      {accionJob === `${job.id}:cancelar` ? "Cancelando…" : "Cancelar"}
+                    </button>
+                    <span style={{ alignSelf: "center", fontSize: 12, color: "#666" }}>
+                      Confirmar permite únicamente la siguiente fase definida por el Agent.
+                    </span>
+                  </div>
                 )}
                 {job.resultado?.salida && (
                   <details style={{ marginTop: 10 }}>
