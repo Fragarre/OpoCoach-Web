@@ -117,6 +117,18 @@ def actualizar_estado_job(
             raise HTTPException(status_code=403, detail="Trabajo asignado a otro agente.")
 
         anterior = job["estado"]
+
+        # ACK idempotente de estados terminales: si el agente envió el
+        # resultado y perdió la respuesta HTTP, puede repetir la notificación
+        # sin reejecutar el trabajo ni crear un segundo evento.
+        terminales = {"COMPLETADO", "ERROR", "INTERRUMPIDO"}
+        if anterior == nuevo and nuevo in terminales:
+            return {
+                "id": str(job["id"]),
+                "estado": anterior,
+                "idempotente": True,
+            }
+
         permitidas = {
             "RECOGIDO": {"EJECUTANDO", "ERROR", "INTERRUMPIDO"},
             "EJECUTANDO": {"COMPLETADO", "ERROR", "INTERRUMPIDO"},
