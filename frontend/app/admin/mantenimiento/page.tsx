@@ -165,7 +165,12 @@ export default function MantenimientoPage() {
       })
       .catch((exc) => setError(exc instanceof Error ? exc.message : "No se pudieron cargar las convocatorias."));
     const timer = window.setInterval(() => void cargar(), 5000);
-    async function resolverConfirmacion(jobId: string, accion: "confirmar" | "cancelar") {
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const activo = useMemo(() => jobs.find((job) => ACTIVOS.has(job.estado)), [jobs]);
+
+  async function resolverConfirmacion(jobId: string, accion: "confirmar" | "cancelar") {
     setAccionJob(`${jobId}:${accion}`);
     setError(null);
     try {
@@ -177,11 +182,6 @@ export default function MantenimientoPage() {
       setAccionJob(null);
     }
   }
-
-  return () => window.clearInterval(timer);
-  }, []);
-
-  const activo = useMemo(() => jobs.find((job) => ACTIVOS.has(job.estado)), [jobs]);
 
   async function lanzar(tipo: string, requiereConvocatoria = false, requiereBusquedaNorma = false) {
     setLanzando(tipo);
