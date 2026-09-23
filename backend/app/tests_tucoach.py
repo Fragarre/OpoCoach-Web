@@ -517,24 +517,6 @@ def crear_test(
             usadas.add(int(p["pregunta_id"]))
             elegidas_total.append(p)
 
-    objetivo = min(numero_preguntas, total_disponible)
-    if len(elegidas_total) < objetivo:
-        restantes = [
-            p
-            for lista in por_elemento.values()
-            for p in lista
-            if int(p["pregunta_id"]) not in usadas
-        ]
-        adicionales = _seleccionar(
-            restantes,
-            min(objetivo - len(elegidas_total), len(restantes)),
-            ultima,
-        )
-        for p in adicionales:
-            usadas.add(int(p["pregunta_id"]))
-            elegidas_total.append(p)
-
-    random.shuffle(elegidas_total)
     total_generado = len(elegidas_total)
     if total_generado == 0:
         raise ValueError("No se ha podido generar el test.")
