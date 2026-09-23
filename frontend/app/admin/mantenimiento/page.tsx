@@ -18,10 +18,43 @@ type Job = {
 
 const ACTIVOS = new Set(["PENDIENTE", "RECOGIDO", "EJECUTANDO", "ESPERANDO_CONFIRMACION"]);
 
+const OPERACIONES = [
+  {
+    tipo: "VALIDACION_COMPLETA",
+    titulo: "Validación completa",
+    descripcion: "Comprueba integridad, bancos, duplicados, referencias jurídicas, modelos y auditorías sin guardar cambios en la base.",
+    boton: "Ejecutar validación",
+  },
+  {
+    tipo: "AUDITORIA_BD",
+    titulo: "Auditoría general de la BD",
+    descripcion: "Comprueba estructura, integridad, distribución, problemas objetivos y duplicados de la base maestra.",
+    boton: "Ejecutar auditoría",
+  },
+  {
+    tipo: "AUDITORIA_BANCOS_SELECCION",
+    titulo: "Auditoría de selección de bancos",
+    descripcion: "Reconstruye virtualmente la selección de los bancos activos y la compara con las preguntas almacenadas.",
+    boton: "Auditar bancos",
+  },
+  {
+    tipo: "AUDITORIA_ESTRUCTURA_BANCO",
+    titulo: "Estructura del banco",
+    descripcion: "Inspecciona tablas, columnas, índices y claves foráneas relacionadas con los bancos.",
+    boton: "Auditar estructura",
+  },
+  {
+    tipo: "AUDITORIA_MATERIALES_ESTUDIO",
+    titulo: "Materiales de estudio",
+    descripcion: "Contrasta los materiales preparados con las normas activas y la huella actual del corpus normativo.",
+    boton: "Auditar materiales",
+  },
+] as const;
+
 export default function MantenimientoPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [lanzando, setLanzando] = useState(false);
+  const [lanzando, setLanzando] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function cargar() {
@@ -44,19 +77,19 @@ export default function MantenimientoPage() {
 
   const activo = useMemo(() => jobs.find((job) => ACTIVOS.has(job.estado)), [jobs]);
 
-  async function lanzarValidacion() {
-    setLanzando(true);
+  async function lanzar(tipo: string) {
+    setLanzando(tipo);
     setError(null);
     try {
       await apiFetch<Job>("/api/v1/admin/jobs", {
         method: "POST",
-        body: JSON.stringify({ tipo: "VALIDACION_COMPLETA", parametros: {} }),
+        body: JSON.stringify({ tipo, parametros: {} }),
       });
       await cargar();
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "No se pudo crear el trabajo.");
     } finally {
-      setLanzando(false);
+      setLanzando(null);
     }
   }
 
@@ -69,30 +102,40 @@ export default function MantenimientoPage() {
         <h1 style={{ margin: "8px 0 10px" }}>Mantenimiento</h1>
         <p style={{ margin: 0, maxWidth: 760, color: "#555", lineHeight: 1.55 }}>
           Ejecución controlada de operaciones sobre el repositorio local de mantenimiento.
-          La primera operación disponible es estrictamente de solo lectura sobre la base de datos.
+          Las operaciones disponibles en esta fase no modifican la base de datos.
         </p>
       </header>
 
-      <section style={{ border: "1px solid #d9d9d9", borderRadius: 12, padding: 20, background: "#fff" }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>SOLO LECTURA</div>
-            <h2 style={{ margin: "0 0 6px", fontSize: 20 }}>Validación completa</h2>
-            <p style={{ margin: 0, color: "#555" }}>
-              Comprueba integridad, bancos, duplicados, referencias jurídicas, modelos y auditorías sin guardar cambios en la base.
-            </p>
-          </div>
-          <button
-            type="button"
-            disabled={Boolean(activo) || lanzando}
-            onClick={() => void lanzarValidacion()}
-            style={{ padding: "10px 16px", fontWeight: 700, cursor: activo || lanzando ? "not-allowed" : "pointer" }}
+      <section style={{ display: "grid", gap: 14 }}>
+        {OPERACIONES.map((operacion) => (
+          <article
+            key={operacion.tipo}
+            style={{ border: "1px solid #d9d9d9", borderRadius: 12, padding: 20, background: "#fff" }}
           >
-            {lanzando ? "Creando…" : activo ? "Hay un trabajo activo" : "Ejecutar validación"}
-          </button>
-        </div>
-        <p style={{ margin: "14px 0 0", fontSize: 13, color: "#666" }}>
-          Requiere que TuCoach Agent esté ejecutándose en el portátil.
+            <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+              <div style={{ flex: "1 1 620px" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>NO MODIFICA BD</div>
+                <h2 style={{ margin: "0 0 6px", fontSize: 20 }}>{operacion.titulo}</h2>
+                <p style={{ margin: 0, color: "#555" }}>{operacion.descripcion}</p>
+              </div>
+              <button
+                type="button"
+                disabled={Boolean(activo) || lanzando !== null}
+                onClick={() => void lanzar(operacion.tipo)}
+                style={{ padding: "10px 16px", fontWeight: 700, cursor: activo || lanzando ? "not-allowed" : "pointer" }}
+              >
+                {lanzando === operacion.tipo
+                  ? "Creando…"
+                  : activo
+                    ? "Hay un trabajo activo"
+                    : operacion.boton}
+              </button>
+            </div>
+          </article>
+        ))}
+        <p style={{ margin: "0 0 0", fontSize: 13, color: "#666" }}>
+          Todas las operaciones requieren que TuCoach Agent esté ejecutándose en el portátil.
+          Solo puede existir un trabajo administrativo activo a la vez.
         </p>
       </section>
 
