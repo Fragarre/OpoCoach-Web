@@ -26,6 +26,13 @@ TIPOS_PERMITIDOS = {
     "AUDITORIA_CORPUS_TEMARIO",
     "AUDITORIA_ESQUEMA_OBSOLETO",
     "INVENTARIO_DENOMINACIONES_NORMAS",
+    "AUDITORIA_FUNCIONAL_BANCO",
+    "AUDITORIA_CONSISTENCIA_GLOBAL",
+}
+
+TIPOS_CON_CONVOCATORIA = {
+    "AUDITORIA_FUNCIONAL_BANCO",
+    "AUDITORIA_CONSISTENCIA_GLOBAL",
 }
 
 
@@ -105,7 +112,19 @@ def crear_job(
     if tipo not in TIPOS_PERMITIDOS:
         raise HTTPException(status_code=400, detail="Tipo de trabajo no permitido.")
 
-    if payload.parametros:
+    if tipo in TIPOS_CON_CONVOCATORIA:
+        if set(payload.parametros) != {"convocatoria_id"}:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{tipo} requiere únicamente convocatoria_id.",
+            )
+        convocatoria_id = payload.parametros.get("convocatoria_id")
+        if isinstance(convocatoria_id, bool) or not isinstance(convocatoria_id, int) or convocatoria_id <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="convocatoria_id debe ser un entero positivo.",
+            )
+    elif payload.parametros:
         raise HTTPException(
             status_code=400,
             detail=f"{tipo} no admite parámetros.",
