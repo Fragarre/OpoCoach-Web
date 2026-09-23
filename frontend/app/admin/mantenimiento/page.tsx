@@ -42,6 +42,13 @@ const BLOQUES_OPERACIONES = [
     titulo: "Bancos de preguntas",
     operaciones: [
       {
+        tipo: "SINCRONIZAR_BANCOS",
+        titulo: "Sincronizar todos los bancos",
+        descripcion: "Revisa todos los bancos activos y muestra las vinculaciones nuevas, retirables o reasignables. Aplicar cambios requiere confirmación explícita y crea un backup global.",
+        boton: "Revisar sincronización",
+        requiereConfirmacion: true,
+      },
+      {
         tipo: "AUDITORIA_CONSISTENCIA_GLOBAL",
         titulo: "Auditoría de consistencia global lote ↔ banco",
         descripcion: "Contrasta lote, banco real, selección esperada, temario, duplicados e integridad para una convocatoria.",
