@@ -122,6 +122,16 @@ def actualizar_estado_job(
         # resultado y perdió la respuesta HTTP, puede repetir la notificación
         # sin reejecutar el trabajo ni crear un segundo evento.
         terminales = {"COMPLETADO", "ERROR", "INTERRUMPIDO"}
+        # ACK idempotente de EJECUTANDO: si el backend aceptó el inicio pero
+        # se perdió la respuesta HTTP, el agente puede repetir exactamente
+        # esa notificación. Esto NO devuelve el job a PENDIENTE ni autoriza
+        # una segunda ejecución local.
+        if anterior == nuevo and nuevo == "EJECUTANDO":
+            return {
+                "id": str(job["id"]),
+                "estado": anterior,
+                "idempotente": True,
+            }
         if anterior == nuevo and nuevo in terminales:
             return {
                 "id": str(job["id"]),
