@@ -1,0 +1,3 @@
+CREATE UNIQUE INDEX IF NOT EXISTS uq_admin_jobs_unico_activo
+ON public.admin_jobs ((1))
+WHERE estado IN ('PENDIENTE','RECOGIDO','EJECUTANDO','ESPERANDO_CONFIRMACION');
