@@ -88,6 +88,15 @@ const OPERACIONES = [
     generaInforme: true,
     requiereConvocatoria: true,
   },
+  {
+    tipo: "BUSCAR_NORMA_RESPUESTA_CORRECTA",
+    titulo: "Buscar norma por respuesta correcta",
+    descripcion: "Usa IA para proponer norma y artículo a partir de la respuesta correcta de preguntas PENDIENTE. Sustituye el informe local anterior de esta misma auditoría.",
+    boton: "Buscar norma",
+    generaInforme: true,
+    usaIa: true,
+    requiereBusquedaNorma: true,
+  },
 ] as const;
 
 export default function MantenimientoPage() {
@@ -97,6 +106,9 @@ export default function MantenimientoPage() {
   const [error, setError] = useState<string | null>(null);
   const [convocatorias, setConvocatorias] = useState<Convocatoria[]>([]);
   const [convocatoriaId, setConvocatoriaId] = useState<number | null>(null);
+  const [modoBusquedaNorma, setModoBusquedaNorma] = useState<"pregunta" | "lote">("lote");
+  const [preguntaId, setPreguntaId] = useState("1");
+  const [limiteBusqueda, setLimiteBusqueda] = useState("20");
 
   async function cargar() {
     try {
@@ -124,7 +136,7 @@ export default function MantenimientoPage() {
 
   const activo = useMemo(() => jobs.find((job) => ACTIVOS.has(job.estado)), [jobs]);
 
-  async function lanzar(tipo: string, requiereConvocatoria = false) {
+  async function lanzar(tipo: string, requiereConvocatoria = false, requiereBusquedaNorma = false) {
     setLanzando(tipo);
     setError(null);
     try {
@@ -132,7 +144,13 @@ export default function MantenimientoPage() {
         method: "POST",
         body: JSON.stringify({
           tipo,
-          parametros: requiereConvocatoria ? { convocatoria_id: convocatoriaId } : {},
+          parametros: requiereConvocatoria
+            ? { convocatoria_id: convocatoriaId }
+            : requiereBusquedaNorma
+              ? modoBusquedaNorma === "pregunta"
+                ? { pregunta_id: Number(preguntaId) }
+                : { limite: Number(limiteBusqueda) }
+              : {},
         }),
       });
       await cargar();
@@ -164,9 +182,31 @@ export default function MantenimientoPage() {
           >
             <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
               <div style={{ flex: "1 1 620px" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>\n                  NO MODIFICA BD{("generaInforme" in operacion && operacion.generaInforme) ? " · GENERA INFORME LOCAL" : ""}\n                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>\n                  NO MODIFICA BD{("generaInforme" in operacion && operacion.generaInforme) ? " · GENERA INFORME LOCAL" : ""}{("usaIa" in operacion && operacion.usaIa) ? " · IA · COSTE" : ""}\n                </div>
                 <h2 style={{ margin: "0 0 6px", fontSize: 20 }}>{operacion.titulo}</h2>
                 <p style={{ margin: 0, color: "#555" }}>{operacion.descripcion}</p>
+                {"requiereBusquedaNorma" in operacion && operacion.requiereBusquedaNorma && (
+                  <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <select
+                      value={modoBusquedaNorma}
+                      onChange={(event) => setModoBusquedaNorma(event.target.value as "pregunta" | "lote")}
+                      disabled={Boolean(activo) || lanzando !== null}
+                      style={{ padding: "8px 10px" }}
+                    >
+                      <option value="lote">Lote de PENDIENTES</option>
+                      <option value="pregunta">Pregunta concreta</option>
+                    </select>
+                    <input
+                      type="number"
+                      min={1}
+                      value={modoBusquedaNorma === "pregunta" ? preguntaId : limiteBusqueda}
+                      onChange={(event) => modoBusquedaNorma === "pregunta" ? setPreguntaId(event.target.value) : setLimiteBusqueda(event.target.value)}
+                      disabled={Boolean(activo) || lanzando !== null}
+                      aria-label={modoBusquedaNorma === "pregunta" ? "ID de pregunta" : "Límite"}
+                      style={{ padding: "8px 10px", width: 130 }}
+                    />
+                  </div>
+                )}
                 {"requiereConvocatoria" in operacion && operacion.requiereConvocatoria && (
                   <select
                     value={convocatoriaId ?? ""}
@@ -184,8 +224,19 @@ export default function MantenimientoPage() {
               </div>
               <button
                 type="button"
-                disabled={Boolean(activo) || lanzando !== null}
-                onClick={() => void lanzar(operacion.tipo, "requiereConvocatoria" in operacion && operacion.requiereConvocatoria)}
+                disabled={
+                  Boolean(activo) ||
+                  lanzando !== null ||
+                  ("requiereBusquedaNorma" in operacion && operacion.requiereBusquedaNorma &&
+                    (modoBusquedaNorma === "pregunta"
+                      ? !/^\d+$/.test(preguntaId) || Number(preguntaId) <= 0
+                      : !/^\d+$/.test(limiteBusqueda) || Number(limiteBusqueda) <= 0))
+                }
+                onClick={() => void lanzar(
+                  operacion.tipo,
+                  "requiereConvocatoria" in operacion && operacion.requiereConvocatoria,
+                  "requiereBusquedaNorma" in operacion && operacion.requiereBusquedaNorma,
+                )}
                 style={{ padding: "10px 16px", fontWeight: 700, cursor: activo || lanzando ? "not-allowed" : "pointer" }}
               >
                 {lanzando === operacion.tipo
