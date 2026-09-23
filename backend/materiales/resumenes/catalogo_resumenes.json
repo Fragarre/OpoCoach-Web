@@ -8,7 +8,7 @@
   },
   {
     "norma_id": 7,
-    "norma": "DECRETO 30/2025",
+    "norma": "Decreto 30/2025, de 25 de febrero",
     "fuente": "DOGV-2025-3226",
     "archivo": "0007_DECRETO_30_2025.pdf",
     "estado": "APROBADO"
@@ -22,7 +22,7 @@
   },
   {
     "norma_id": 12,
-    "norma": "DECRETO 54/2025",
+    "norma": "Decreto 54/2025, de 15 de abril, del Consell, de simplificación administrativa y transformación digital",
     "fuente": "LOCAL-DOGV-DECRETO-54-2025",
     "archivo": "0012_DECRETO_54_2025.pdf",
     "estado": "APROBADO"
@@ -71,7 +71,7 @@
   },
   {
     "norma_id": 42,
-    "norma": "LEY 38/2003",
+    "norma": "Ley 38/2003, de 17 de noviembre, General de Subvenciones",
     "fuente": "BOE-A-2003-20977",
     "archivo": "0042_LEY_38_2003.pdf",
     "estado": "APROBADO"
@@ -91,36 +91,29 @@
     "estado": "APROBADO"
   },
   {
-    "norma_id": 46,
-    "norma": "LEY 4/2023",
-    "fuente": "BOE-A-2023-5366",
-    "archivo": "0046_LEY_4_2023.pdf",
-    "estado": "APROBADO"
-  },
-  {
     "norma_id": 47,
-    "norma": "LEY 40/2015",
+    "norma": "Ley 40/2015, de 1 de octubre, de Régimen Jurídico del Sector Público",
     "fuente": "BOE-A-2015-10566",
     "archivo": "0047_LEY_40_2015.pdf",
     "estado": "APROBADO"
   },
   {
     "norma_id": 49,
-    "norma": "LEY 5/1983",
+    "norma": "Ley 5/1983, de 30 de diciembre, del Consell",
     "fuente": "BOE-A-1984-3460",
     "archivo": "0049_LEY_5_1983.pdf",
     "estado": "APROBADO"
   },
   {
     "norma_id": 51,
-    "norma": "LEY 53/1984",
+    "norma": "Ley 53/1984, de 26 de diciembre",
     "fuente": "BOE-A-1985-151",
     "archivo": "0051_LEY_53_1984.pdf",
     "estado": "APROBADO"
   },
   {
     "norma_id": 52,
-    "norma": "LEY 6/1985",
+    "norma": "Ley 6/1985, de 11 de mayo, de Sindicatura de Comptes",
     "fuente": "BOE-A-1985-18239",
     "archivo": "0052_LEY_6_1985.pdf",
     "estado": "APROBADO"
@@ -134,56 +127,56 @@
   },
   {
     "norma_id": 62,
-    "norma": "LEY 9/2003",
+    "norma": "Ley 9/2003, de 2 de abril, para la igualdad entre mujeres y hombres",
     "fuente": "BOE-A-2003-9334",
     "archivo": "0062_LEY_9_2003.pdf",
     "estado": "APROBADO"
   },
   {
     "norma_id": 63,
-    "norma": "LEY 9/2017",
+    "norma": "Ley 9/2017, de 8 de noviembre, de Contratos del Sector Público",
     "fuente": "BOE-A-2017-12902",
     "archivo": "0063_LEY_9_2017.pdf",
     "estado": "APROBADO"
   },
   {
     "norma_id": 65,
-    "norma": "LEY_ORGANICA 1/2004",
+    "norma": "Ley Orgánica 1/2004, de 28 de diciembre, de Medidas de Protección Integral contra la Violencia de Género",
     "fuente": "BOE-A-2004-21760",
     "archivo": "0065_LEY_ORGANICA_1_2004.pdf",
     "estado": "APROBADO"
   },
   {
     "norma_id": 67,
-    "norma": "LEY_ORGANICA 2/1982",
+    "norma": "Ley Orgánica 2/1982, de 12 de mayo",
     "fuente": "BOE-A-1982-11584",
     "archivo": "0067_LEY_ORGANICA_2_1982.pdf",
     "estado": "APROBADO"
   },
   {
     "norma_id": 71,
-    "norma": "LEY_ORGANICA 3/2007",
+    "norma": "Ley Orgánica 3/2007, de 22 de marzo, para la igualdad efectiva de mujeres y hombres",
     "fuente": "BOE-A-2007-6115",
     "archivo": "0071_LEY_ORGANICA_3_2007.pdf",
     "estado": "APROBADO"
   },
   {
     "norma_id": 72,
-    "norma": "LEY_ORGANICA 3/2018",
+    "norma": "Ley Orgánica 3/2018, de 5 de diciembre, de Protección de Datos Personales y garantía de los derechos digitales",
     "fuente": "BOE-A-2018-16673",
     "archivo": "0072_LEY_ORGANICA_3_2018.pdf",
     "estado": "APROBADO"
   },
   {
     "norma_id": 73,
-    "norma": "LEY_ORGANICA 5/1982",
+    "norma": "Ley Orgánica 5/1982, de 1 de julio, de Estatuto de Autonomía de la Comunitat Valenciana",
     "fuente": "BOE-A-1982-17235",
     "archivo": "0073_LEY_ORGANICA_5_1982.pdf",
     "estado": "APROBADO"
   },
   {
     "norma_id": 80,
-    "norma": "REAL_DECRETO_LEGISLATIVO 5/2015",
+    "norma": "Real Decreto Legislativo 5/2015, de 30 de octubre, texto refundido de la Ley del Estatuto Básico del Empleado Público",
     "fuente": "BOE-A-2015-11719",
     "archivo": "0080_REAL_DECRETO_LEGISLATIVO_5_2015.pdf",
     "estado": "APROBADO"
@@ -211,9 +204,16 @@
   },
   {
     "norma_id": 10145,
-    "norma": "ley 4 2026 de 22 de julio",
-    "fuente": "LOCAL-DOGV-LEY-4-2026",
+    "norma": "Ley 4/2026, de 22 de julio",
+    "fuente": "DOGV-C-2026-25581",
     "archivo": "10145_ley_4_2026_de_22_de_julio.pdf",
+    "estado": "APROBADO"
+  },
+  {
+    "norma_id": 11798,
+    "norma": "Ley 4/2023, de 28 de febrero, para la igualdad real y efectiva de las personas trans y para la garantía de los derechos de las personas LGTBI",
+    "fuente": "BOE-A-2023-5366",
+    "archivo": "11798_Ley_4_2023_de_28_de_febrero_para_la_igualdad_real_y_efectiva_de_las_personas_trans_y_para_la_ga.pdf",
     "estado": "APROBADO"
   }
 ]
