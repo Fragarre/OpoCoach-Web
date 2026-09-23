@@ -14,7 +14,7 @@ type Job = {
   creado_at: string;
   iniciado_at?: string | null;
   finalizado_at?: string | null;
-  resultado?: { returncode?: number; salida?: string } | null;
+  resultado?: { returncode?: number; salida?: string; review?: Record<string, unknown> } | null;
   error_texto?: string | null;
 };
 
@@ -74,6 +74,14 @@ const BLOQUES_OPERACIONES = [
   {
     titulo: "Temario y normativa",
     operaciones: [
+      {
+        tipo: "MANTENIMIENTO_TEMARIO",
+        titulo: "Mantenimiento controlado del temario",
+        descripcion: "Revisa el temario.csv de una convocatoria. La primera fase no modifica datos; cualquier continuación requiere confirmación explícita.",
+        boton: "Revisar temario",
+        requiereConvocatoria: true,
+        requiereConfirmacion: true,
+      },
       {
         tipo: "AUDITORIA_CORPUS_TEMARIO",
         titulo: "Auditoría del temario/corpus",
@@ -195,7 +203,7 @@ export default function MantenimientoPage() {
         <h1 style={{ margin: "8px 0 10px" }}>Mantenimiento</h1>
         <p style={{ margin: 0, maxWidth: 760, color: "#555", lineHeight: 1.55 }}>
           Ejecución controlada de operaciones sobre el repositorio local de mantenimiento.
-          Las operaciones disponibles en esta fase no modifican la base de datos.
+          Las auditorías no modifican la base de datos. Las operaciones de mantenimiento se ejecutan por fases y requieren confirmación explícita antes de cualquier paso preparatorio de escritura.
         </p>
       </header>
 
@@ -210,7 +218,11 @@ export default function MantenimientoPage() {
           >
             <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
               <div style={{ flex: "1 1 620px" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>\n                  NO MODIFICA BD{("generaInforme" in operacion && operacion.generaInforme) ? " · GENERA INFORME LOCAL" : ""}{("usaIa" in operacion && operacion.usaIa) ? " · IA · COSTE" : ""}\n                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
+                  {("requiereConfirmacion" in operacion && operacion.requiereConfirmacion)
+                    ? "REVIEW · REQUIERE CONFIRMACIÓN · APPLY PREPARADO SOLO CREA BACKUP"
+                    : `NO MODIFICA BD${("generaInforme" in operacion && operacion.generaInforme) ? " · GENERA INFORME LOCAL" : ""}${("usaIa" in operacion && operacion.usaIa) ? " · IA · COSTE" : ""}`}
+                </div>
                 <h2 style={{ margin: "0 0 6px", fontSize: 20 }}>{operacion.titulo}</h2>
                 <p style={{ margin: 0, color: "#555" }}>{operacion.descripcion}</p>
                 {"requiereBusquedaNorma" in operacion && operacion.requiereBusquedaNorma && (
