@@ -119,6 +119,11 @@ export default function AuthenticatedEmploymentNav() {
       main[style*="1280px"] > header .headerActions > a:not(.employment-current) {
         display: none !important;
       }
+
+      .employment-nav-link {
+        text-decoration: none !important;
+      }
+
       .employment-app-nav {
         display: flex;
         align-items: center;
