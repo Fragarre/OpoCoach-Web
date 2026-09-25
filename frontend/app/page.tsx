@@ -2258,13 +2258,6 @@ async function descargarMaterialPdf() {
               </button>
               <button
                 type="button"
-                className={seccion === "CHAT" ? "nav-link active" : "nav-link"}
-                onClick={() => setSeccion("CHAT")}
-              >
-                Chat
-              </button>
-              <button
-                type="button"
                 className={seccion === "MATERIALES" ? "nav-link active" : "nav-link"}
                 onClick={() => setSeccion("MATERIALES")}
               >
@@ -2632,13 +2625,6 @@ async function descargarMaterialPdf() {
                 ))}
               </div>
 
-              <button
-                type="button"
-                className="text-action"
-                onClick={() => setSeccion("CHAT")}
-              >
-                Consultar NetReto →
-              </button>
             </aside>
           </section>
 
