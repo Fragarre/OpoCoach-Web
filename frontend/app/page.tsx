@@ -1741,6 +1741,11 @@ async function descargarMaterialPdf() {
             </div>
           </header>
 
+          <div className="public-gva-focus" aria-label="Ámbito de NetReto">
+            <img src="/logo-gva.png" alt="" aria-hidden="true" />
+            <span>Oposiciones para la <strong>Administración Pública de la Comunidad Valenciana</strong>.</span>
+          </div>
+
           <section className="public-hero">
             <div className="public-hero-copy">
               <span className="public-kicker">Preparación inteligente de oposiciones</span>
@@ -1751,10 +1756,7 @@ async function descargarMaterialPdf() {
                 necesitas reforzar.
               </p>
 
-              <div className="public-gva-focus" aria-label="Ámbito de NetReto">
-                <img src="/logo-gva.png" alt="" aria-hidden="true" />
-                <span>Oposiciones para la <strong>Administración Pública de la Comunidad Valenciana</strong>.</span>
-              </div>
+
 
               <div className="public-hero-actions">
                 <button
