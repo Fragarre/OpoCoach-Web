@@ -1777,7 +1777,7 @@ async function descargarMaterialPdf() {
                     setPantallaPublica("REGISTRO");
                   }}
                 >
-                  Hacer un test gratis
+                  24 horas de acceso gratuito
                 </button>
                 <button
                   type="button"
@@ -1792,11 +1792,6 @@ async function descargarMaterialPdf() {
                 </button>
               </div>
 
-              <div className="public-trust-line">
-                <span>24 horas de acceso gratuito</span>
-                <span>2 tests ? 2 simulacros</span>
-                <span>2 descargas de materiales</span>
-              </div>
             </div>
 
             <div className="public-value-panel" aria-label="Qué ofrece NetReto">
@@ -1848,7 +1843,8 @@ async function descargarMaterialPdf() {
               </div>
               <div className="value-trial">
                 <strong>Empieza sin pagar</strong>
-                <span>24 horas ? 2 tests ? 2 simulacros ? 2 descargas de materiales</span>
+                <span>Accede durante 24 horas y prueba las principales herramientas de preparación.</span>
+                <span>Incluye: 2 tests · 2 simulacros · 2 descargas de materiales · Empleo general</span>
               </div>
             </div>
           </section>
@@ -1988,7 +1984,7 @@ async function descargarMaterialPdf() {
               <h2>Prueba NetReto antes de suscribirte</h2>
               <p>
                 Prueba NetReto durante 24 horas desde tu primer acceso: hasta 2 tests,
-                2 simulacros y 2 descargas de materiales. Empleo general tambi?n est? incluido.
+                2 simulacros y 2 descargas de materiales. Empleo general también está incluido.
               </p>
             </div>
 
@@ -2026,7 +2022,7 @@ async function descargarMaterialPdf() {
           <section className="public-final-cta">
             <div>
               <span className="eyebrow">Empieza ahora</span>
-              <h2>Prueba NetReto durante 24 horas y decide despu?s.</h2>
+              <h2>Prueba NetReto durante 24 horas y decide después.</h2>
             </div>
             <button
               type="button"
