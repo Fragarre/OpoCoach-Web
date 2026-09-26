@@ -1384,7 +1384,7 @@ button:not(:disabled):active {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(420px, .9fr);
   gap: 44px;
-  align-items: center;
+  align-items: start;
   padding: 56px 0 64px;
 }
 
@@ -2244,6 +2244,6 @@ button:not(:disabled):active {
 /* Alinear la columna izquierda del hero con el panel derecho */
 @media (min-width: 900px) {
   .public-hero-copy {
-    transform: translateY(-100px);
+    transform: none;
   }
 }
