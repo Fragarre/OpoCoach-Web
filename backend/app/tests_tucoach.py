@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 import re
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from psycopg.rows import dict_row
@@ -441,11 +442,6 @@ def crear_test(
     if numero_preguntas <= 0:
         raise ValueError("El número de preguntas debe ser mayor que cero.")
 
-    if es_prueba_gratuita and numero_preguntas > 10:
-        raise ValueError(
-            "La prueba gratuita permite un máximo de 10 preguntas."
-        )
-
     modo = str(modo_seleccion).strip().upper()
     if modo not in {"TEMA", "NORMA"}:
         raise ValueError("El modo de selección del test no es válido.")
@@ -534,7 +530,9 @@ def crear_test(
             if es_prueba_gratuita:
                 cur.execute(
                     """
-                    SELECT prueba_gratuita_consumida_at
+                    SELECT
+                        prueba_24h_inicio_at,
+                        prueba_24h_tests_usados
                     FROM public.profiles
                     WHERE id = %s
                     FOR UPDATE
@@ -542,12 +540,37 @@ def crear_test(
                     (user_id,),
                 )
                 perfil = cur.fetchone()
+
                 if perfil is None:
                     raise ValueError("El usuario no tiene perfil TuCoach.")
-                if perfil["prueba_gratuita_consumida_at"] is not None:
+
+                inicio_24h = perfil["prueba_24h_inicio_at"]
+                tests_usados = int(perfil["prueba_24h_tests_usados"] or 0)
+
+                if inicio_24h is None:
                     raise ValueError(
-                        "La prueba gratuita de esta cuenta ya ha sido utilizada."
+                        "La prueba gratuita de 24 horas no está iniciada."
                     )
+
+                if datetime.now(timezone.utc) >= inicio_24h + timedelta(hours=24):
+                    raise ValueError(
+                        "La prueba gratuita de 24 horas ha finalizado."
+                    )
+
+                if tests_usados >= 2:
+                    raise ValueError(
+                        "Has alcanzado el límite de 2 tests de la prueba gratuita."
+                    )
+
+                cur.execute(
+                    """
+                    UPDATE public.profiles
+                    SET prueba_24h_tests_usados = prueba_24h_tests_usados + 1,
+                        updated_at = now()
+                    WHERE id = %s
+                    """,
+                    (user_id,),
+                )
 
             cur.execute(
                 """
@@ -663,22 +686,6 @@ def crear_test(
                         Jsonb(tema),
                     ),
                 )
-
-            if es_prueba_gratuita:
-                cur.execute(
-                    """
-                    UPDATE public.profiles
-                    SET prueba_gratuita_consumida_at = now(),
-                        updated_at = now()
-                    WHERE id = %s
-                      AND prueba_gratuita_consumida_at IS NULL
-                    """,
-                    (user_id,),
-                )
-                if cur.rowcount != 1:
-                    raise RuntimeError(
-                        "No se ha podido registrar el consumo de la prueba gratuita."
-                    )
 
         con.commit()
 

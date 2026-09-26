@@ -174,6 +174,15 @@ class EstadoSuscripcion(BaseModel):
     ended_at: str | None = None
     prueba_gratuita_disponible: bool = True
     prueba_gratuita_consumida_at: str | None = None
+    prueba_24h_inicio_at: str | None = None
+    prueba_24h_fin_at: str | None = None
+    prueba_24h_activa: bool = False
+    prueba_24h_tests_usados: int = 0
+    prueba_24h_tests_restantes: int = 0
+    prueba_24h_simulacros_usados: int = 0
+    prueba_24h_simulacros_restantes: int = 0
+    prueba_24h_materiales_descargados: int = 0
+    prueba_24h_materiales_restantes: int = 0
     historico_post_baja_dias: int = 0
     acceso_historico_hasta: str | None = None
     acceso_historico_activo: bool = False

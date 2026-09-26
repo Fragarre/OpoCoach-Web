@@ -763,6 +763,43 @@ def crear_simulacro(
 
     with conectar_postgres() as con:
         with con.cursor(row_factory=dict_row) as cur:
+            if es_prueba_gratuita:
+                cur.execute(
+                    """
+                    SELECT
+                        prueba_24h_inicio_at,
+                        prueba_24h_simulacros_usados,
+                        now() < prueba_24h_inicio_at + interval '24 hours' AS prueba_24h_activa
+                    FROM public.profiles
+                    WHERE id = %s
+                    FOR UPDATE
+                    """,
+                    (user_id,),
+                )
+                perfil = cur.fetchone()
+
+                if perfil is None:
+                    raise ValueError("El usuario no tiene perfil TuCoach.")
+
+                if perfil["prueba_24h_inicio_at"] is None:
+                    raise ValueError("La prueba gratuita de 24 horas no está iniciada.")
+
+                if not bool(perfil["prueba_24h_activa"]):
+                    raise ValueError("La prueba gratuita de 24 horas ha finalizado.")
+
+                if int(perfil["prueba_24h_simulacros_usados"] or 0) >= 2:
+                    raise ValueError("Has alcanzado el límite de 2 simulacros de la prueba gratuita.")
+
+                cur.execute(
+                    """
+                    UPDATE public.profiles
+                    SET prueba_24h_simulacros_usados = prueba_24h_simulacros_usados + 1,
+                        updated_at = now()
+                    WHERE id = %s
+                    """,
+                    (user_id,),
+                )
+
             cur.execute(
                 """
                 SELECT COALESCE(MAX(numero), 0) + 1 AS siguiente

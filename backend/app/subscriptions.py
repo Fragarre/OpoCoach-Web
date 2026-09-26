@@ -336,7 +336,12 @@ def obtener_estado_suscripcion(user_id: UUID) -> dict:
         with con.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
-                SELECT prueba_gratuita_consumida_at
+                SELECT
+                    prueba_gratuita_consumida_at,
+                    prueba_24h_inicio_at,
+                    prueba_24h_tests_usados,
+                    prueba_24h_simulacros_usados,
+                    prueba_24h_materiales_descargados
                 FROM public.profiles
                 WHERE id = %s
                 LIMIT 1
@@ -378,6 +383,37 @@ def obtener_estado_suscripcion(user_id: UUID) -> dict:
             )
             admin = cur.fetchone()
 
+            acceso_interno = bool(admin and admin["acceso_total"])
+
+            suscrito_stripe = (
+                fila is not None
+                and fila["status"] in ESTADOS_CON_ACCESO
+            )
+
+            if (
+                perfil is not None
+                and perfil["prueba_24h_inicio_at"] is None
+                and not suscrito_stripe
+                and not acceso_interno
+            ):
+                cur.execute(
+                    """
+                    UPDATE public.profiles
+                    SET prueba_24h_inicio_at = now(),
+                        updated_at = now()
+                    WHERE id = %s
+                      AND prueba_24h_inicio_at IS NULL
+                    RETURNING prueba_24h_inicio_at
+                    """,
+                    (user_id,),
+                )
+                inicio_prueba = cur.fetchone()
+                con.commit()
+                if inicio_prueba is not None:
+                    perfil["prueba_24h_inicio_at"] = inicio_prueba[
+                        "prueba_24h_inicio_at"
+                    ]
+
     acceso_interno = bool(admin and admin["acceso_total"])
 
     consumida_at = (
@@ -414,13 +450,64 @@ def obtener_estado_suscripcion(user_id: UUID) -> dict:
         resultado["suscrito"] = True
         resultado["status"] = "ACCESO_INTERNO"
 
+    inicio_24h = (
+        perfil["prueba_24h_inicio_at"]
+        if perfil is not None
+        else None
+    )
+    fin_24h = (
+        inicio_24h + timedelta(hours=24)
+        if inicio_24h is not None
+        else None
+    )
+    ahora = datetime.now(timezone.utc)
+
+    prueba_24h_activa = bool(
+        not resultado["suscrito"]
+        and fin_24h is not None
+        and ahora < fin_24h
+    )
+
+    tests_usados = (
+        int(perfil["prueba_24h_tests_usados"] or 0)
+        if perfil is not None
+        else 0
+    )
+    simulacros_usados = (
+        int(perfil["prueba_24h_simulacros_usados"] or 0)
+        if perfil is not None
+        else 0
+    )
+    materiales_descargados = (
+        int(perfil["prueba_24h_materiales_descargados"] or 0)
+        if perfil is not None
+        else 0
+    )
+
     resultado["acceso_interno"] = acceso_interno
     resultado["prueba_gratuita_consumida_at"] = (
         consumida_at.isoformat() if consumida_at is not None else None
     )
-    resultado["prueba_gratuita_disponible"] = (
-        consumida_at is None and fila is None
+    resultado["prueba_gratuita_disponible"] = prueba_24h_activa
+
+    resultado["prueba_24h_inicio_at"] = (
+        inicio_24h.isoformat() if inicio_24h is not None else None
     )
+    resultado["prueba_24h_fin_at"] = (
+        fin_24h.isoformat() if fin_24h is not None else None
+    )
+    resultado["prueba_24h_activa"] = prueba_24h_activa
+    resultado["prueba_24h_tests_usados"] = tests_usados
+    resultado["prueba_24h_tests_restantes"] = max(0, 2 - tests_usados)
+    resultado["prueba_24h_simulacros_usados"] = simulacros_usados
+    resultado["prueba_24h_simulacros_restantes"] = max(
+        0, 2 - simulacros_usados
+    )
+    resultado["prueba_24h_materiales_descargados"] = materiales_descargados
+    resultado["prueba_24h_materiales_restantes"] = max(
+        0, 2 - materiales_descargados
+    )
+
     resultado["cancelacion_programada"] = bool(
         resultado.get("cancel_at_period_end")
         or resultado.get("cancel_at")
@@ -446,3 +533,67 @@ def obtener_estado_suscripcion(user_id: UUID) -> dict:
     )
 
     return resultado
+
+
+def consumir_descarga_material_prueba_24h(user_id: UUID) -> int:
+    """
+    Consume una descarga de materiales de la prueba gratuita de 24 horas.
+
+    La actualización es atómica: solo incrementa el contador si la prueba
+    continúa activa y todavía no se han consumido las 2 descargas permitidas.
+    Devuelve el número de descargas consumidas tras la operación.
+    """
+    with conectar_postgres() as con:
+        with con.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                UPDATE public.profiles
+                SET prueba_24h_materiales_descargados =
+                        prueba_24h_materiales_descargados + 1,
+                    updated_at = now()
+                WHERE id = %s
+                  AND prueba_24h_inicio_at IS NOT NULL
+                  AND now() < prueba_24h_inicio_at + interval '24 hours'
+                  AND prueba_24h_materiales_descargados < 2
+                RETURNING prueba_24h_materiales_descargados
+                """,
+                (user_id,),
+            )
+            fila = cur.fetchone()
+
+            if fila is None:
+                cur.execute(
+                    """
+                    SELECT
+                        prueba_24h_inicio_at,
+                        prueba_24h_materiales_descargados,
+                        now() < prueba_24h_inicio_at + interval '24 hours'
+                            AS prueba_24h_activa
+                    FROM public.profiles
+                    WHERE id = %s
+                    """,
+                    (user_id,),
+                )
+                perfil = cur.fetchone()
+
+                if perfil is None:
+                    raise ValueError("El usuario no tiene perfil TuCoach.")
+
+                if perfil["prueba_24h_inicio_at"] is None:
+                    raise ValueError(
+                        "La prueba gratuita de 24 horas no está iniciada."
+                    )
+
+                if not bool(perfil["prueba_24h_activa"]):
+                    raise ValueError(
+                        "La prueba gratuita de 24 horas ha finalizado."
+                    )
+
+                raise ValueError(
+                    "Has alcanzado el límite de 2 descargas de materiales "
+                    "de la prueba gratuita."
+                )
+
+        con.commit()
+
+    return int(fila["prueba_24h_materiales_descargados"])

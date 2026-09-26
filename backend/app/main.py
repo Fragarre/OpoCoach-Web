@@ -19,6 +19,7 @@ from app.pdf_materiales import generar_pdf_material
 from app.auth import UsuarioAutenticado, exigir_admin, usuario_actual
 from app.billing import crear_checkout_suscripcion, crear_portal_cliente
 from app.subscriptions import (
+    consumir_descarga_material_prueba_24h,
     procesar_webhook,
     obtener_estado_suscripcion,
     obtener_customer_id_stripe,
@@ -70,7 +71,6 @@ from app.simulacros import (
     obtener_tiempo_correccion,
     obtener_resultado_para_analisis,
     obtener_resultado_acumulado,
-    existe_simulacro_gratuito,
 )
 
 class ChatMensajeRequest(BaseModel):
@@ -113,10 +113,12 @@ def _exigir_lectura_prueba(simulacro_id: int, user_id) -> tuple[dict, dict]:
     prueba = _obtener_prueba_accesible(simulacro_id, user_id)
     estado = _estado_acceso(user_id)
 
+    if estado["suscrito"] or estado.get("acceso_historico_activo", False):
+        return prueba, estado
+
     if (
         bool(prueba.get("es_prueba_gratuita"))
-        or estado["suscrito"]
-        or estado.get("acceso_historico_activo", False)
+        and estado.get("prueba_24h_activa", False)
     ):
         return prueba, estado
 
@@ -132,7 +134,13 @@ def _exigir_escritura_prueba(simulacro_id: int, user_id) -> tuple[dict, dict]:
     prueba = _obtener_prueba_accesible(simulacro_id, user_id)
     estado = _estado_acceso(user_id)
 
-    if bool(prueba.get("es_prueba_gratuita")) or estado["suscrito"]:
+    if estado["suscrito"]:
+        return prueba, estado
+
+    if (
+        bool(prueba.get("es_prueba_gratuita"))
+        and estado.get("prueba_24h_activa", False)
+    ):
         return prueba, estado
 
     if estado.get("acceso_historico_activo", False):
@@ -379,7 +387,15 @@ def materiales_normas_api(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> list[dict]:
     try:
-        _exigir_suscripcion_activa(usuario.id)
+        estado = _estado_acceso(usuario.id)
+        if not (
+            estado["suscrito"]
+            or estado.get("prueba_24h_activa", False)
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="La prueba gratuita de 24 horas ha finalizado.",
+            )
 
         convocatoria = obtener_convocatoria_materiales(convocatoria_id)
         if convocatoria is None:
@@ -406,7 +422,26 @@ def materiales_pdf_api(
     usuario: UsuarioAutenticado = Depends(usuario_actual),
 ) -> dict:
     try:
-        _exigir_suscripcion_activa(usuario.id)
+        estado = _estado_acceso(usuario.id)
+        es_prueba_24h = not estado["suscrito"]
+
+        if es_prueba_24h and not estado.get("prueba_24h_activa", False):
+            raise HTTPException(
+                status_code=403,
+                detail="La prueba gratuita de 24 horas ha finalizado.",
+            )
+
+        if (
+            es_prueba_24h
+            and int(estado.get("prueba_24h_materiales_restantes", 0)) <= 0
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Has alcanzado el límite de 2 descargas de materiales "
+                    "de la prueba gratuita."
+                ),
+            )
 
         convocatoria = obtener_convocatoria_materiales(convocatoria_id)
         if convocatoria is None:
@@ -453,6 +488,9 @@ def materiales_pdf_api(
         else:
             raise ValueError("Tipo de material no válido.")
 
+        if es_prueba_24h:
+            consumir_descarga_material_prueba_24h(usuario.id)
+
         return {
             "filename": filename,
             "content_base64": base64.b64encode(contenido).decode("ascii"),
@@ -477,18 +515,20 @@ def disponibilidad_simulacro(
     try:
         estado = _estado_acceso(usuario.id)
         if not estado["suscrito"]:
-            # Un usuario sin suscripción puede consultar la disponibilidad
-            # únicamente mientras conserve su simulacro gratuito.
-            # La prueba gratuita del simulacro es independiente de la del test.
-            tiene_cliente_stripe = bool(estado.get("customer_id"))
-            if tiene_cliente_stripe or existe_simulacro_gratuito(usuario.id):
+            if not estado.get("prueba_24h_activa", False):
+                raise HTTPException(
+                    status_code=403,
+                    detail="La prueba gratuita de 24 horas ha finalizado.",
+                )
+            if int(estado.get("prueba_24h_simulacros_restantes", 0)) <= 0:
                 raise HTTPException(
                     status_code=403,
                     detail=(
-                        "El simulacro gratuito de esta cuenta ya ha sido utilizado. "
-                        "Activa una suscripción para crear nuevos simulacros."
+                        "Has alcanzado el limite de 2 simulacros "
+                        "de la prueba gratuita."
                     ),
                 )
+
 
         return [
             DisponibilidadParte(**x)
@@ -517,10 +557,13 @@ def mis_simulacros_api(
             estado["suscrito"]
             or estado.get("acceso_historico_activo", False)
         ):
-            filas = [
-                fila for fila in filas
-                if bool(fila.get("es_prueba_gratuita"))
-            ]
+            if estado.get("prueba_24h_activa", False):
+                filas = [
+                    fila for fila in filas
+                    if bool(fila.get("es_prueba_gratuita"))
+                ]
+            else:
+                filas = []
         return [SimulacroListado(**fila) for fila in filas]
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -578,10 +621,13 @@ def mis_tests_api(
         estado["suscrito"]
         or estado.get("acceso_historico_activo", False)
     ):
-        filas = [
-            fila for fila in filas
-            if bool(fila.get("es_prueba_gratuita"))
-        ]
+        if estado.get("prueba_24h_activa", False):
+            filas = [
+                fila for fila in filas
+                if bool(fila.get("es_prueba_gratuita"))
+            ]
+        else:
+            filas = []
     return [SimulacroListado(**fila) for fila in filas]
 
 
@@ -595,22 +641,20 @@ def nuevo_test_api(
         es_prueba_gratuita = not estado["suscrito"]
 
         if es_prueba_gratuita:
-            if not estado["prueba_gratuita_disponible"]:
+            if not estado.get("prueba_24h_activa", False):
+                raise HTTPException(
+                    status_code=403,
+                    detail="La prueba gratuita de 24 horas ha finalizado.",
+                )
+            if int(estado.get("prueba_24h_tests_restantes", 0)) <= 0:
                 raise HTTPException(
                     status_code=403,
                     detail=(
-                        "La prueba gratuita de esta cuenta ya ha sido utilizada. "
-                        "Activa una suscripción para crear nuevos tests."
+                        "Has alcanzado el limite de 2 tests "
+                        "de la prueba gratuita."
                     ),
                 )
-            if datos.numero_preguntas > 10:
-                raise HTTPException(
-                    status_code=403,
-                    detail=(
-                        "La prueba gratuita permite un máximo de 10 preguntas. "
-                        "Activa una suscripción para crear tests más largos."
-                    ),
-                )
+
 
         return TestCreado(
             **crear_test(
@@ -644,21 +688,23 @@ def nuevo_simulacro(
 ) -> SimulacroCreado:
     try:
         estado = _estado_acceso(usuario.id)
-        es_prueba_gratuita = False
+        es_prueba_gratuita = not estado["suscrito"]
 
-        if not estado["suscrito"]:
-            # El simulacro gratuito es independiente de la prueba gratuita de
-            # los tests. Solo está disponible para una cuenta que todavía no
-            # tenga cliente Stripe y que no haya creado ya su simulacro gratuito.
-            if bool(estado.get("customer_id")) or existe_simulacro_gratuito(usuario.id):
+        if es_prueba_gratuita:
+            if not estado.get("prueba_24h_activa", False):
+                raise HTTPException(
+                    status_code=403,
+                    detail="La prueba gratuita de 24 horas ha finalizado.",
+                )
+            if int(estado.get("prueba_24h_simulacros_restantes", 0)) <= 0:
                 raise HTTPException(
                     status_code=403,
                     detail=(
-                        "El simulacro gratuito de esta cuenta ya ha sido utilizado. "
-                        "Activa una suscripción para crear nuevos simulacros."
+                        "Has alcanzado el limite de 2 simulacros "
+                        "de la prueba gratuita."
                     ),
                 )
-            es_prueba_gratuita = True
+
 
         sid = crear_simulacro(
             datos.convocatoria_id,

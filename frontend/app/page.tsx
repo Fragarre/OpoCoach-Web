@@ -19,6 +19,15 @@ type EstadoSuscripcion = {
   ended_at: string | null;
   prueba_gratuita_disponible: boolean;
   prueba_gratuita_consumida_at: string | null;
+  prueba_24h_inicio_at: string | null;
+  prueba_24h_fin_at: string | null;
+  prueba_24h_activa: boolean;
+  prueba_24h_tests_usados: number;
+  prueba_24h_tests_restantes: number;
+  prueba_24h_simulacros_usados: number;
+  prueba_24h_simulacros_restantes: number;
+  prueba_24h_materiales_descargados: number;
+  prueba_24h_materiales_restantes: number;
   historico_post_baja_dias: number;
   acceso_historico_hasta: string | null;
   acceso_historico_activo: boolean;
@@ -463,12 +472,10 @@ const [materialTipo, setMaterialTipo] = useState<
   ).length;
   const totalCorregidas = totalPruebas - totalPendientes;
 
-  // El simulacro gratuito tiene un consumo independiente del test gratuito.
-  const simulacroGratuitoDisponible = Boolean(
+  const prueba24hActiva = Boolean(
     estadoSuscripcion &&
       !estadoSuscripcion.suscrito &&
-      estadoSuscripcion.customer_id === null &&
-      !misSimulacros.some((item) => item.es_prueba_gratuita)
+      estadoSuscripcion.prueba_24h_activa
   );
 
   const inicialUsuario = (me?.email?.trim()?.[0] ?? "O").toUpperCase();
@@ -614,7 +621,7 @@ useEffect(() => {
   if (
     !session ||
     !estadoSuscripcion ||
-    !estadoSuscripcion.suscrito ||
+    (!estadoSuscripcion.suscrito && !estadoSuscripcion.prueba_24h_activa) ||
     materialConvocatoriaId === null ||
     modoHistoricoPostBaja
   ) {
@@ -909,6 +916,7 @@ async function descargarMaterialPdf() {
       `api/v1/convocatorias/${materialConvocatoriaId}/materiales/normas/${materialNormaId}/pdf?tipo=${materialTipo}`
     );
     descargarPdfGenerado(pdf);
+    await actualizarSuscripcion();
     setMensaje("Material de estudio descargado.");
   } catch (err) {
     setError(err instanceof Error ? err.message : String(err));
@@ -1422,6 +1430,7 @@ async function descargarMaterialPdf() {
       iniciarTiempoCorreccion(0);
       setVistaPrueba("RESUMEN");
       await recargarSimulacros();
+      await actualizarSuscripcion();
       setMensaje(
         `Simulacro ${creado.id} creado correctamente: ${lista.length} preguntas.`
       );
@@ -1784,9 +1793,9 @@ async function descargarMaterialPdf() {
               </div>
 
               <div className="public-trust-line">
-                <span>1 test gratuito</span>
-                <span>Hasta 10 preguntas</span>
-                <span>Corrección y PDFs incluidos</span>
+                <span>24 horas de acceso gratuito</span>
+                <span>2 tests ? 2 simulacros</span>
+                <span>2 descargas de materiales</span>
               </div>
             </div>
 
@@ -1839,7 +1848,7 @@ async function descargarMaterialPdf() {
               </div>
               <div className="value-trial">
                 <strong>Empieza sin pagar</strong>
-                <span>1 test gratuito · hasta 10 preguntas · corrección y PDFs incluidos</span>
+                <span>24 horas ? 2 tests ? 2 simulacros ? 2 descargas de materiales</span>
               </div>
             </div>
           </section>
@@ -1978,8 +1987,8 @@ async function descargarMaterialPdf() {
               <span className="eyebrow">Precio sencillo</span>
               <h2>Prueba NetReto antes de suscribirte</h2>
               <p>
-                Empieza con un test gratuito de hasta 10 preguntas. Si te resulta
-                útil, activa el acceso completo.
+                Prueba NetReto durante 24 horas desde tu primer acceso: hasta 2 tests,
+                2 simulacros y 2 descargas de materiales. Empleo general tambi?n est? incluido.
               </p>
             </div>
 
@@ -2009,7 +2018,7 @@ async function descargarMaterialPdf() {
                 Probar gratis
               </button>
               <span className="pricing-note">
-                La prueba gratuita incluye un test de hasta 10 preguntas.
+                La prueba gratuita dura 24 horas desde el primer acceso e incluye hasta 2 tests, 2 simulacros y 2 descargas de materiales.
               </span>
             </div>
           </section>
@@ -2017,7 +2026,7 @@ async function descargarMaterialPdf() {
           <section className="public-final-cta">
             <div>
               <span className="eyebrow">Empieza ahora</span>
-              <h2>Haz tu primer test y comprueba cómo trabaja NetReto.</h2>
+              <h2>Prueba NetReto durante 24 horas y decide despu?s.</h2>
             </div>
             <button
               type="button"
@@ -2118,12 +2127,12 @@ async function descargarMaterialPdf() {
             </span>
             <h1>
               {esRegistro
-                ? "Crea tu cuenta y haz tu primer test."
+                ? "Crea tu cuenta y prueba NetReto durante 24 horas."
                 : "Continúa con tu preparación."}
             </h1>
             <p>
               {esRegistro
-                ? "La cuenta gratuita te permite realizar un test de hasta 10 preguntas con corrección y PDFs."
+                ? "Tu prueba de 24 horas comienza con el primer acceso e incluye hasta 2 tests, 2 simulacros, 2 descargas de materiales y Empleo general."
                 : "Accede a tus simulacros, tests, resultados y herramientas de preparación."}
             </p>
 
@@ -2337,8 +2346,8 @@ async function descargarMaterialPdf() {
                         }`
                       : estadoSuscripcion.suscrito
                         ? "Suscripción activa"
-                        : (estadoSuscripcion.prueba_gratuita_disponible || simulacroGratuitoDisponible)
-                        ? "Pruebas gratuitas disponibles"
+                        : prueba24hActiva
+                        ? "Prueba gratuita de 24 horas activa"
                         : "Suscripción no activa"}
                 </strong>
                 <span>
@@ -2346,9 +2355,9 @@ async function descargarMaterialPdf() {
                     ? "Tu acceso continúa temporalmente. Revisa tu método de pago."
                     : estadoSuscripcion.cancelacion_programada
                       ? "Conservas el acceso completo hasta la fecha indicada."
-                      : estadoSuscripcion.prueba_gratuita_disponible || simulacroGratuitoDisponible
-                        ? "Puedes realizar un test de hasta 10 preguntas y un simulacro completo de forma gratuita."
-                        : "Activa una suscripción para crear nuevas pruebas y utilizar todas las funciones."}
+                      : prueba24hActiva
+                        ? `Te quedan ${estadoSuscripcion.prueba_24h_tests_restantes} tests, ${estadoSuscripcion.prueba_24h_simulacros_restantes} simulacros y ${estadoSuscripcion.prueba_24h_materiales_restantes} descargas de materiales.`
+                        : "La prueba gratuita ha finalizado. Activa una suscripción para continuar con la preparación."}
                 </span>
 
                 {checkoutRetorno === "success" && (
@@ -3182,7 +3191,9 @@ async function descargarMaterialPdf() {
             disabled={
               ocupado ||
               materialConvocatoriaId === null ||
-              materialNormaId === null
+              materialNormaId === null ||
+              (prueba24hActiva &&
+                estadoSuscripcion!.prueba_24h_materiales_restantes <= 0)
             }
             onClick={descargarMaterialPdf}
           >
@@ -3222,7 +3233,12 @@ async function descargarMaterialPdf() {
           <div style={{ marginTop: 18 }}>
             <button
               className="primary"
-              disabled={ocupado || convocatoriaSimulacroId === null}
+              disabled={
+                ocupado ||
+                convocatoriaSimulacroId === null ||
+                (prueba24hActiva &&
+                  estadoSuscripcion!.prueba_24h_simulacros_restantes <= 0)
+              }
               onClick={() => convocatoriaSimulacroId !== null && crear(convocatoriaSimulacroId)}
             >
               {ocupado && accionEnCurso === "Creando simulacro..."
@@ -3322,13 +3338,10 @@ async function descargarMaterialPdf() {
               className="number-input"
               type="number"
               min={1}
-              max={estadoSuscripcion?.suscrito ? undefined : 10}
               value={numeroPreguntasTest}
               onChange={(e) => {
                 const valor = Math.max(1, Number(e.target.value));
-                setNumeroPreguntasTest(
-                  estadoSuscripcion?.suscrito ? valor : Math.min(10, valor)
-                );
+                setNumeroPreguntasTest(valor);
               }}
             />
 
@@ -3400,7 +3413,11 @@ async function descargarMaterialPdf() {
             <div style={{ marginTop: 18 }}>
               <button
                 className="primary"
-                disabled={ocupado}
+                disabled={
+                  ocupado ||
+                  (prueba24hActiva &&
+                    estadoSuscripcion!.prueba_24h_tests_restantes <= 0)
+                }
                 onClick={crearTest}
               >
                 {ocupado ? "Creando..." : "Crear test"}
